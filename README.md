@@ -4,6 +4,10 @@ Webová hra s fialovým kruhem ovládaným čtyřmi motory. Cílem je posbírat 
 
 ## Spuštění
 
+### Online (GitHub Pages)
+
+**[Spustit hru](https://frantisekvvb.github.io/hra_newton/)**
+
 ### Přímo v prohlížeči
 
 Otevři soubor `index.html` (dvojklik ve Finderu).
