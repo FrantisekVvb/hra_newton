@@ -1,0 +1,2087 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hra Newton</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background: #f0f0f0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #wrap {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: min(100vw, calc(100dvh * 1702 / 949));
+      height: min(100dvh, calc(100vw * 949 / 1702));
+      max-width: 100vw;
+      max-height: 100dvh;
+      cursor: default;
+      touch-action: none;
+    }
+    .win-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .win-overlay.show { display: flex; }
+    .win-box {
+      background: white;
+      padding: 2rem 2.5rem;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .win-box h2 { margin-bottom: 0.75rem; color: #4A43E8; }
+    .win-box button {
+      margin-top: 1rem;
+      padding: 0.6rem 1.4rem;
+      font-size: 1rem;
+      border: 2px solid #4A43E8;
+      background: #4A43E8;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .win-box button:hover { background: #3a34c8; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="1702" height="949"></canvas>
+  </div>
+  <div class="win-overlay" id="winOverlay">
+    <div class="win-box">
+      <h2 id="winTitle">Všechny mince sebrány!</h2>
+      <p id="winMessage">Gratulujeme, vyhráváš.</p>
+      <button type="button" id="restartBtn">Hrát znovu</button>
+    </div>
+  </div>
+  <script>
+(function () {
+  const W = 1702, H = 949;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const PLAY = { x: 246, y: 32, w: 1456, h: 884 };
+  const PLAYER_R = 29.5;
+  const PLAYER_COLOR = '#4A43E8';
+  const WALL_FILL = '#32F4AB';
+  const WALL_STROKE = '#07553A';
+  const WALL_SIZE = 98;
+
+  const DEFAULT_WALLS = [
+    [247,523],[247,719],[345,621],[953,475],[1295,706],[541,621],[1149,475],[1491,706],
+    [247,327],[541,254],[1249,131],[247,131],[1601,129],[247,425],[541,352],[1249,229],
+    [247,621],[855,475],[443,621],[1051,475],[1393,706],[247,229],[1601,227],[541,156],
+    [1249,33],[247,33],[1601,31]
+  ];
+
+  const DEFAULT_COINS = [
+    [789.774, 242.166],
+    [1049.77, 246.166],
+    [1489.77, 125.1657],
+    [1082.77, 815.166],
+    [763.774, 815.166]
+  ];
+
+  const SCENARIO_2_WALLS = [
+    [1423, 33], [1521, 33], [1717, 33],
+    [443, 131], [541, 131], [639, 131], [1227, 131], [1325, 131], [1521, 131],
+    [443, 229], [639, 229], [1227, 229],
+    [443, 327], [639, 327], [1227, 327], [1619, 327],
+    [443, 425], [639, 425], [1227, 425], [1619, 425],
+    [443, 523], [639, 523], [1227, 523], [1619, 523],
+    [443, 621], [639, 621], [1227, 621], [1619, 621],
+    [443, 719], [639, 719], [1227, 719], [1619, 719],
+    [933, 817], [1031, 817], [1129, 817], [1227, 817]
+  ];
+  const SCENARIO_2_COINS = [[1472, 180]];
+  const SCENARIO_2_PLAYER = { x: 296, y: 866 };
+
+  const BLUDISTE_SCENARIOS = {
+    1: {
+      walls: DEFAULT_WALLS,
+      coins: DEFAULT_COINS,
+      player: { x: 742.5, y: 676 }
+    },
+    2: {
+      walls: SCENARIO_2_WALLS,
+      coins: SCENARIO_2_COINS,
+      player: SCENARIO_2_PLAYER
+    }
+  };
+
+  const SCENARIO_BTN = {
+    1: { x: 6, y: 55, w: 86, h: 34 },
+    2: { x: 94, y: 55, w: 90, h: 34 }
+  };
+
+  const ZAVOD_OBSTACLE_COUNT = 12;
+  const ZAVOD_START_WALLS = [
+    [247, 33],
+    [247, 131],
+    [247, 229],
+    [247, 327],
+    [247, 425],
+    [247, 523],
+    [247, 621],
+    [247, 719],
+    [247, 817]
+  ];
+  const ZAVOD_END_WALLS = [
+    [15147, 33],
+    [15147, 131],
+    [15147, 229],
+    [15147, 327],
+    [15147, 425],
+    [15147, 523],
+    [15147, 621],
+    [15147, 719],
+    [15147, 817]
+  ];
+  const ZAVOD_GOAL_X = 14949;
+  const ZAVOD_WALL_GOAL_GAP = ZAVOD_END_WALLS[0][0] - ZAVOD_GOAL_X;
+  const RACE_FINISH_SPEED_EPS = 2;
+  const RACE_TIMER = { x: 6, y: 55, w: 178, h: 72 };
+  const RACE_OBSTACLES_TOGGLE = { x: 6, y: 150, w: 178, h: 34 };
+  const RACE_AXIS = { x: PLAY.x, y: PLAY.y + PLAY.h + 6, w: PLAY.w, h: 24 };
+
+  const MODE_BTN = {
+    bludiste: { x: 6, y: 8, w: 90, h: 36 },
+    zavod:    { x: 98, y: 8, w: 86, h: 36 }
+  };
+  const FRICTION_TOGGLE = { x: 6, y: 348, w: 178, h: 34 };
+  const NEW_GAME_BTN = { x: 6, y: 458, w: 178, h: 46 };
+  const EDITOR_BTN = { x: 6, y: 758, w: 178, h: 42 };
+  const EDITOR_RUN_BTN = { x: 6, y: 458, w: 178, h: 46 };
+  const MASS_SLIDER = { x: 8, y: 398, w: 174, trackY: 424, trackH: 10, thumbR: 11 };
+  const PALETTE = {
+    wall:   { x: 61, y: 88, w: 98, h: 98 },
+    coin:   { cx: 110, cy: 230, r: 24 },
+    line:   { x: 61, y: 300, w: 98, h: 20 },
+    circle: { cx: 110, cy: 390, r: 29.5 }
+  };
+  const BORDER_LINE_WIDTH = 6;
+  const FRICTION_COEF = 0.96;
+  const MASS_MIN = 1;
+  const MASS_MAX = 8;
+  const MASS_MID = 3;
+  const ACCEL_AT_MID = 520;
+  const ACCEL_POWER = 3.4;
+  const MAX_SPEED = 10000;
+  const COIN_COUNT = 5;
+
+  let walls = DEFAULT_WALLS.map(w => [...w]);
+  const COIN_R = 24;
+
+  const CONTROLS = {
+    up:    { rects: [[61,532,59,59]] },
+    down:  { rects: [[61,652,59,59]] },
+    left:  { rects: [[1,591,59,59]] },
+    right: { rects: [[121,591,59,59]] }
+  };
+
+  let playerMass = MASS_MID;
+  let draggingMass = false;
+  let frictionEnabled = false;
+  let settingsEditable = true;
+  let trail = [];
+
+  let player = { x: 742.5, y: 676, vx: 0, vy: 0 };
+  let motors = { up: false, down: false, left: false, right: false };
+  let coins = [];
+  let keys = new Set();
+  let pointerDir = null;
+  let lastTime = 0;
+  let flameTime = 0;
+  let won = false;
+  let gameState = 'playing';
+  let explosion = null;
+  let levelStart = { playerX: 742.5, playerY: 676, coins: [] };
+  let playMode = 'bludiste';
+  let appMode = 'playing';
+  let editorTool = 'wall';
+  let editorWalls = [];
+  let editorCoins = [];
+  let editorPlayer = null;
+  let editorLines = [];
+  let borderLines = [];
+  let raceGoal = null;
+  let raceElapsed = 0;
+  let raceFinishTime = 0;
+  let racePhase = 'outbound';
+  let raceObstaclesEnabled = true;
+  let raceStopwatchRunning = false;
+  let raceObstacleWalls = [];
+  let bludisteScenario = 1;
+
+  function saveLevelStart() {
+    levelStart = {
+      playerX: player.x,
+      playerY: player.y,
+      coins: coins.map(c => ({ x: c.x, y: c.y })),
+      lines: borderLines.map(s => ({ side: s.side, index: s.index }))
+    };
+  }
+
+  function isBludiste() {
+    return playMode === 'bludiste';
+  }
+
+  function isZavod() {
+    return playMode === 'zavod';
+  }
+
+  function raceStartPosition() {
+    const wallX = ZAVOD_START_WALLS[0][0];
+    return {
+      x: wallX + WALL_SIZE + ZAVOD_WALL_GOAL_GAP + PLAYER_R + 12,
+      y: PLAY.y + PLAY.h / 2
+    };
+  }
+
+  function raceScreenX() {
+    return raceStartPosition().x;
+  }
+
+  function raceCameraOffset() {
+    return isZavod() ? player.x - raceScreenX() : 0;
+  }
+
+  function worldToScreenX(wx) {
+    return wx - raceCameraOffset();
+  }
+
+  function setupBludisteLevel() {
+    const sc = BLUDISTE_SCENARIOS[bludisteScenario];
+    walls = sc.walls.map(w => [...w]);
+    coins = sc.coins.map(c => ({ x: c[0], y: c[1], taken: false }));
+    borderLines = [];
+    raceGoal = null;
+    gameState = 'playing';
+    player.x = sc.player.x;
+    player.y = sc.player.y;
+    saveLevelStart();
+  }
+
+  function setBludisteScenario(num) {
+    if (bludisteScenario === num && appMode === 'playing') return;
+    bludisteScenario = num;
+    if (appMode === 'editing') appMode = 'playing';
+    clearTrail();
+    setupBludisteLevel();
+    resetPlayerState();
+  }
+
+  function isScenarioBtn(x, y, num) {
+    const b = SCENARIO_BTN[num];
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function drawScenarioButton(num, label) {
+    const b = SCENARIO_BTN[num];
+    const active = bludisteScenario === num;
+    ctx.fillStyle = active ? '#4A43E8' : 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = active ? 'white' : 'black';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawScenarioSelector() {
+    ctx.fillStyle = 'black';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Scénář', 12, 50);
+    drawScenarioButton(1, 'Scénář 1');
+    drawScenarioButton(2, 'Scénář 2');
+  }
+
+  function generateRandomZavodObstacles() {
+    const start = raceStartPosition();
+    const minWx = start.x + 280;
+    const maxWx = ZAVOD_GOAL_X - ZAVOD_WALL_GOAL_GAP - WALL_SIZE;
+    const minC = Math.floor((minWx - PLAY.x - 1) / WALL_SIZE);
+    const maxC = Math.floor((maxWx - PLAY.x - 1) / WALL_SIZE);
+    const rows = Math.floor((PLAY.h - 2) / WALL_SIZE);
+    const startWallX = ZAVOD_START_WALLS[0][0];
+    const endWallX = ZAVOD_END_WALLS[0][0];
+    const picked = [];
+
+    if (maxC <= minC) return picked;
+
+    for (let attempt = 0; attempt < 600 && picked.length < ZAVOD_OBSTACLE_COUNT; attempt++) {
+      const c = minC + Math.floor(Math.random() * (maxC - minC + 1));
+      const r = Math.floor(Math.random() * rows);
+      const wx = PLAY.x + 1 + c * WALL_SIZE;
+      const wy = PLAY.y + 1 + r * WALL_SIZE;
+
+      if (wx <= startWallX + WALL_SIZE || wx >= endWallX - WALL_SIZE) continue;
+
+      const tooClose = picked.some(([pw, ph]) => {
+        const pc = Math.floor((pw - PLAY.x - 1) / WALL_SIZE);
+        const pr = Math.floor((ph - PLAY.y - 1) / WALL_SIZE);
+        return Math.abs(pc - c) + Math.abs(pr - r) < 3;
+      });
+      if (tooClose) continue;
+
+      picked.push([wx, wy]);
+    }
+    return picked;
+  }
+
+  function applyZavodWalls() {
+    const obstacleWalls = raceObstaclesEnabled ? raceObstacleWalls.map(w => [...w]) : [];
+    walls = [
+      ...obstacleWalls,
+      ...ZAVOD_START_WALLS.map(w => [...w]),
+      ...ZAVOD_END_WALLS.map(w => [...w])
+    ];
+  }
+
+  function setupZavodLevel() {
+    raceObstacleWalls = generateRandomZavodObstacles();
+    applyZavodWalls();
+    coins = [];
+    raceGoal = { x: ZAVOD_GOAL_X };
+    racePhase = 'outbound';
+    resetRaceStopwatch();
+    const start = raceStartPosition();
+    player.x = start.x;
+    player.y = start.y;
+    saveLevelStart();
+  }
+
+  function resetRaceStopwatch() {
+    raceElapsed = 0;
+    raceFinishTime = 0;
+    raceStopwatchRunning = false;
+  }
+
+  function formatStopwatch(sec) {
+    const total = Math.max(0, sec);
+    const whole = Math.floor(total);
+    const cs = Math.floor((total % 1) * 100);
+    const cc = cs.toString().padStart(2, '0');
+    return `${whole},${cc} s`;
+  }
+
+  function showWinOverlay(kind) {
+    const title = document.getElementById('winTitle');
+    const msg = document.getElementById('winMessage');
+    if (isZavod()) {
+      title.textContent = 'Závod dokončen!';
+      msg.textContent = `Tvůj čas: ${formatStopwatch(raceFinishTime)}`;
+    } else {
+      title.textContent = 'Všechny mince sebrány!';
+      msg.textContent = 'Gratulujeme, vyhráváš.';
+    }
+    document.getElementById('winOverlay').classList.add('show');
+  }
+
+  function updateRaceStopwatch(dt) {
+    if (!isZavod() || won || gameState !== 'playing') return;
+    const active = motorActive();
+    if (!raceStopwatchRunning) {
+      if (!active.up && !active.down && !active.left && !active.right) return;
+      raceStopwatchRunning = true;
+    }
+    raceElapsed += dt;
+  }
+
+  function checkRaceGoal() {
+    if (!isZavod() || !raceGoal || won || gameState !== 'playing') return;
+    const g = raceGoal;
+    const start = raceStartPosition();
+
+    if (racePhase === 'outbound' && player.x >= g.x - PLAYER_R) {
+      racePhase = 'return';
+      return;
+    }
+
+    if (racePhase === 'return') {
+      const startLineX = start.x;
+      const speed = Math.hypot(player.vx, player.vy);
+      if (player.x <= startLineX && speed < RACE_FINISH_SPEED_EPS) {
+        won = true;
+        player.vx = 0;
+        player.vy = 0;
+        raceFinishTime = raceElapsed;
+        showWinOverlay();
+      }
+    }
+  }
+
+  function setPlayMode(mode) {
+    if (playMode === mode && appMode === 'playing') return;
+    playMode = mode;
+    if (appMode === 'editing') appMode = 'playing';
+    frictionEnabled = false;
+    clearTrail();
+    if (mode === 'zavod') setupZavodLevel();
+    else setupBludisteLevel();
+    resetPlayerState();
+  }
+
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function wallGrid() {
+    const cols = Math.floor((PLAY.w - 2) / WALL_SIZE);
+    const rows = Math.floor((PLAY.h - 2) / WALL_SIZE);
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const wx = PLAY.x + 1 + c * WALL_SIZE;
+        const wy = PLAY.y + 1 + r * WALL_SIZE;
+        cells.push({ wx, wy, c, r, key: `${c},${r}` });
+      }
+    }
+    return { cells, cols, rows };
+  }
+
+  function posToCell(x, y) {
+    const c = Math.floor((x - PLAY.x - 1) / WALL_SIZE);
+    const r = Math.floor((y - PLAY.y - 1) / WALL_SIZE);
+    return { c, r };
+  }
+
+  function allCoinsReachable(startX, startY, coinList, wallList) {
+    const blocked = new Set(wallList.map(([wx, wy]) => {
+      const { c, r } = posToCell(wx + WALL_SIZE / 2, wy + WALL_SIZE / 2);
+      return `${c},${r}`;
+    }));
+    const { cols, rows } = wallGrid();
+    const start = posToCell(startX, startY);
+    const targets = new Set(coinList.map(coin => {
+      const p = posToCell(coin.x, coin.y);
+      return `${p.c},${p.r}`;
+    }));
+    const q = [[start.c, start.r]];
+    const seen = new Set([`${start.c},${start.r}`]);
+    let found = 0;
+    while (q.length) {
+      const [c, r] = q.shift();
+      const key = `${c},${r}`;
+      if (targets.has(key)) found++;
+      for (const [dc, dr] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const nc = c + dc, nr = r + dr;
+        const nk = `${nc},${nr}`;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        if (blocked.has(nk) || seen.has(nk)) continue;
+        seen.add(nk);
+        q.push([nc, nr]);
+      }
+    }
+    return found === targets.size;
+  }
+
+  const WALL_CLUSTERS = [
+    [[0, 0]],
+    [[0, 0], [1, 0]],
+    [[0, 0], [0, 1]],
+    [[0, 0], [1, 0], [0, 1]],
+    [[0, 0], [1, 0], [1, 1]],
+    [[0, 0], [0, 1], [1, 1]]
+  ];
+
+  function placeSparseWalls(cells, cols, rows) {
+    const cellMap = new Map(cells.map(cell => [cell.key, cell]));
+    const blocked = new Set();
+    const nextWalls = [];
+    const clusterCount = 7 + Math.floor(Math.random() * 5);
+    const anchors = [];
+
+    for (let k = 0; k < clusterCount; k++) {
+      let anchor = null;
+      for (let t = 0; t < 40; t++) {
+        const c = 1 + Math.floor(Math.random() * (cols - 2));
+        const r = 1 + Math.floor(Math.random() * (rows - 2));
+        const tooClose = anchors.some(a => Math.abs(a.c - c) + Math.abs(a.r - r) < 3);
+        if (tooClose) continue;
+        anchor = { c, r };
+        break;
+      }
+      if (!anchor) continue;
+
+      const shape = WALL_CLUSTERS[Math.floor(Math.random() * WALL_CLUSTERS.length)];
+      const batch = [];
+      for (const [dc, dr] of shape) {
+        const nc = anchor.c + dc;
+        const nr = anchor.r + dr;
+        if (nc <= 0 || nr <= 0 || nc >= cols - 1 || nr >= rows - 1) continue;
+        const cell = cellMap.get(`${nc},${nr}`);
+        if (cell && !blocked.has(cell.key)) batch.push(cell);
+      }
+      if (batch.length === 0) continue;
+      anchors.push(anchor);
+      for (const cell of batch) {
+        blocked.add(cell.key);
+        nextWalls.push([cell.wx, cell.wy]);
+      }
+    }
+    return nextWalls;
+  }
+
+  function pickStartAndCoins(freeSpots) {
+    shuffle(freeSpots);
+    for (let i = 0; i < freeSpots.length; i++) {
+      const candidate = freeSpots[i];
+      const others = freeSpots.filter((s, j) => j !== i &&
+        Math.hypot(s.x - candidate.x, s.y - candidate.y) > 140);
+      shuffle(others);
+      const picked = [];
+      for (const s of others) {
+        if (picked.every(p => Math.hypot(p.x - s.x, p.y - s.y) > 110)) picked.push(s);
+        if (picked.length === COIN_COUNT) break;
+      }
+      if (picked.length < COIN_COUNT) continue;
+      return { start: candidate, coinList: picked.map(p => ({ x: p.x, y: p.y })) };
+    }
+    return null;
+  }
+
+  function generateRandomLevel() {
+    const { cells, cols, rows } = wallGrid();
+    const maxWalls = Math.floor(cells.length * 0.16);
+
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const nextWalls = placeSparseWalls(cells, cols, rows);
+      if (nextWalls.length < 5 || nextWalls.length > maxWalls) continue;
+
+      const blocked = new Set(nextWalls.map(([wx, wy]) => {
+        const { c, r } = posToCell(wx + WALL_SIZE / 2, wy + WALL_SIZE / 2);
+        return `${c},${r}`;
+      }));
+      const freeSpots = cells
+        .filter(cell => !blocked.has(cell.key))
+        .map(cell => ({ x: cell.wx + WALL_SIZE / 2, y: cell.wy + WALL_SIZE / 2 }));
+
+      if (freeSpots.length < cells.length * 0.78) continue;
+
+      const placement = pickStartAndCoins(freeSpots);
+      if (!placement) continue;
+      const { start, coinList } = placement;
+      if (hitRectAt(start.x, start.y, PLAYER_R, nextWalls)) continue;
+      if (coinList.some(c => hitRectAt(c.x, c.y, COIN_R, nextWalls))) continue;
+      if (!allCoinsReachable(start.x, start.y, coinList, nextWalls)) continue;
+
+      walls = nextWalls;
+      coins = coinList.map(c => ({ x: c.x, y: c.y, taken: false }));
+      player.x = start.x;
+      player.y = start.y;
+      saveLevelStart();
+      return true;
+    }
+    walls = DEFAULT_WALLS.map(w => [...w]);
+    coins = DEFAULT_COINS.map(c => ({ x: c[0], y: c[1], taken: false }));
+    player.x = 742.5;
+    player.y = 676;
+    saveLevelStart();
+    return false;
+  }
+
+  function hitRectAt(px, py, r, wallList) {
+    for (const [wx, wy] of wallList) {
+      const cx = Math.max(wx, Math.min(px, wx + WALL_SIZE));
+      const cy = Math.max(wy, Math.min(py, wy + WALL_SIZE));
+      const dx = px - cx, dy = py - cy;
+      if (dx * dx + dy * dy < r * r) return true;
+    }
+    return false;
+  }
+
+  function unlockSettings() {
+    settingsEditable = true;
+  }
+
+  function lockSettings() {
+    settingsEditable = false;
+    draggingMass = false;
+  }
+
+  function resetPlayerState() {
+    unlockSettings();
+    player.x = levelStart.playerX;
+    player.y = levelStart.playerY;
+    player.vx = 0;
+    player.vy = 0;
+    coins = levelStart.coins.map(c => ({ x: c.x, y: c.y, taken: false }));
+    borderLines = (levelStart.lines || []).map(s => ({ side: s.side, index: s.index }));
+    motors = { up: false, down: false, left: false, right: false };
+    keys.clear();
+    pointerDir = null;
+    won = false;
+    gameState = 'playing';
+    explosion = null;
+    clearTrail();
+    if (isZavod()) {
+      resetRaceStopwatch();
+      racePhase = 'outbound';
+    }
+    document.getElementById('winOverlay').classList.remove('show');
+  }
+
+  function resetGame() {
+    resetPlayerState();
+  }
+
+  function newGame() {
+    clearTrail();
+    if (isBludiste()) setupBludisteLevel();
+    else setupZavodLevel();
+    resetPlayerState();
+  }
+
+  function triggerExplosion(x, y) {
+    clearTrail();
+    gameState = 'exploding';
+    explosion = { x, y, time: 0, duration: 0.85, particles: [] };
+    const colors = [PLAYER_COLOR, '#6b63ff', '#ff6f00', '#ff4500', '#ffd54a', '#222'];
+    for (let i = 0; i < 36; i++) {
+      const angle = (Math.PI * 2 * i) / 36 + Math.random() * 0.4;
+      const speed = 140 + Math.random() * 320;
+      explosion.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        size: 5 + Math.random() * 12,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+    for (let r = 0; r < 3; r++) {
+      explosion.particles.push({
+        x, y, vx: 0, vy: 0, life: 1,
+        size: 18 + r * 22,
+        color: r === 0 ? 'rgba(255,120,40,0.9)' : r === 1 ? 'rgba(255,200,60,0.55)' : 'rgba(74,67,232,0.35)',
+        ring: true
+      });
+    }
+  }
+
+  function updateExplosion(dt) {
+    if (!explosion) return;
+    explosion.time += dt;
+    for (const p of explosion.particles) {
+      if (!p.ring) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 220 * dt;
+        p.vx *= 0.98;
+      } else {
+        p.size += 180 * dt;
+      }
+      p.life -= dt * 1.15;
+    }
+    if (explosion.time >= explosion.duration) resetGame();
+  }
+
+  function playerAccel() {
+    return ACCEL_AT_MID * Math.pow(MASS_MID / playerMass, ACCEL_POWER);
+  }
+
+  function massT() {
+    return (playerMass - MASS_MIN) / (MASS_MAX - MASS_MIN);
+  }
+
+  function playerColor() {
+    const t = massT();
+    const sat = 52 + t * 18;
+    const light = 76 - t * 52;
+    return `hsl(258, ${sat}%, ${light}%)`;
+  }
+
+  function playerColorDark(active) {
+    const t = massT();
+    const sat = 52 + t * 18;
+    const light = (active ? 58 : 64) - t * 34;
+    return `hsl(258, ${sat}%, ${light}%)`;
+  }
+
+  function playerColorAlpha(alpha) {
+    const t = massT();
+    const sat = 52 + t * 18;
+    const light = 76 - t * 52;
+    return `hsla(258, ${sat}%, ${light}%, ${alpha})`;
+  }
+
+  function playerTrailColorAlpha(alpha) {
+    const t = massT();
+    const sat = 52 + t * 18;
+    let light = 76 - t * 52;
+    light = light + (100 - light) * 0.5;
+    return `hsla(258, ${sat}%, ${light}%, ${alpha})`;
+  }
+
+  function frictionStrength() {
+    return frictionEnabled ? (1 - FRICTION_COEF) : 0;
+  }
+
+  function clearTrail() {
+    trail = [];
+  }
+
+  function updateTrail() {
+    if (!isBludiste() || gameState !== 'playing' || !frictionEnabled) return;
+    const speed = Math.hypot(player.vx, player.vy);
+    if (speed < 12) return;
+
+    const intensity = frictionStrength();
+    if (trail.length > 0) {
+      const last = trail[trail.length - 1];
+      const dist = Math.hypot(player.x - last.x, player.y - last.y);
+      if (dist > 220) {
+        trail.push({ x: player.x, y: player.y, intensity, break: true });
+        return;
+      }
+      if (dist < 6) return;
+    }
+    trail.push({ x: player.x, y: player.y, intensity });
+  }
+
+  function drawTrail() {
+    if (trail.length < 2) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    ctx.clip();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const p0 = trail[i - 1];
+      const p1 = trail[i];
+      if (p1.break) continue;
+      const t = i / trail.length;
+      const alpha = Math.min(0.65, 0.14 + p1.intensity * 14 * (0.3 + t * 0.7));
+      ctx.strokeStyle = playerTrailColorAlpha(alpha);
+      ctx.lineWidth = PLAYER_R * 1.5 * (0.35 + t * 0.65);
+      ctx.beginPath();
+      ctx.moveTo(worldToScreenX(p0.x), p0.y);
+      ctx.lineTo(worldToScreenX(p1.x), p1.y);
+      ctx.stroke();
+    }
+    for (let i = 0; i < trail.length; i++) {
+      const p = trail[i];
+      const t = i / trail.length;
+      const alpha = Math.min(0.5, 0.1 + p.intensity * 14 * 0.35 * (0.3 + t * 0.7));
+      ctx.fillStyle = playerTrailColorAlpha(alpha);
+      ctx.beginPath();
+      ctx.arc(worldToScreenX(p.x), p.y, PLAYER_R * (0.5 + t * 0.45), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function massFromX(x) {
+    const t = Math.max(0, Math.min(1, (x - MASS_SLIDER.x) / MASS_SLIDER.w));
+    return MASS_MIN + t * (MASS_MAX - MASS_MIN);
+  }
+
+  function thumbXForMass(mass) {
+    const t = (mass - MASS_MIN) / (MASS_MAX - MASS_MIN);
+    return MASS_SLIDER.x + t * MASS_SLIDER.w;
+  }
+
+  function setMassFromX(x) {
+    playerMass = massFromX(x);
+  }
+
+  function isFrictionToggleHit(x, y) {
+    const b = FRICTION_TOGGLE;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function isMassSliderHit(x, y) {
+    const s = MASS_SLIDER;
+    const ty = s.trackY + s.trackH / 2;
+    const padY = 22;
+    return x >= s.x - 8 && x <= s.x + s.w + 8 && y >= s.y - 6 && y <= ty + padY;
+  }
+
+  function motorActive() {
+    return {
+      up: keys.has('ArrowUp') || pointerDir === 'up',
+      down: keys.has('ArrowDown') || pointerDir === 'down',
+      left: keys.has('ArrowLeft') || pointerDir === 'left',
+      right: keys.has('ArrowRight') || pointerDir === 'right'
+    };
+  }
+
+  function hitRect(px, py, r) {
+    return hitRectAt(px, py, r, walls);
+  }
+
+  function perimeterCounts() {
+    return {
+      top: Math.floor(PLAY.w / WALL_SIZE),
+      bottom: Math.floor(PLAY.w / WALL_SIZE),
+      left: Math.floor(PLAY.h / WALL_SIZE),
+      right: Math.floor(PLAY.h / WALL_SIZE)
+    };
+  }
+
+  function lineKey(seg) {
+    return `${seg.side}:${seg.index}`;
+  }
+
+  function segmentCoords(seg) {
+    const { side, index } = seg;
+    if (side === 'top') {
+      const x = PLAY.x + index * WALL_SIZE;
+      return { x1: x, y1: PLAY.y, x2: x + WALL_SIZE, y2: PLAY.y };
+    }
+    if (side === 'bottom') {
+      const x = PLAY.x + index * WALL_SIZE;
+      const y = PLAY.y + PLAY.h;
+      return { x1: x, y1: y, x2: x + WALL_SIZE, y2: y };
+    }
+    if (side === 'left') {
+      const y = PLAY.y + index * WALL_SIZE;
+      return { x1: PLAY.x, y1: y, x2: PLAY.x, y2: y + WALL_SIZE };
+    }
+    const y = PLAY.y + index * WALL_SIZE;
+    return { x1: PLAY.x + PLAY.w, y1: y, x2: PLAY.x + PLAY.w, y2: y + WALL_SIZE };
+  }
+
+  function distPointSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  }
+
+  function hitBorderLines(px, py, r, lines) {
+    const pad = BORDER_LINE_WIDTH / 2 + 2;
+    for (const seg of lines) {
+      const { x1, y1, x2, y2 } = segmentCoords(seg);
+      if (distPointSegment(px, py, x1, y1, x2, y2) < r + pad) return true;
+    }
+    return false;
+  }
+
+  function drawBorderLine(seg) {
+    const { x1, y1, x2, y2 } = segmentCoords(seg);
+    ctx.strokeStyle = WALL_FILL;
+    ctx.lineWidth = BORDER_LINE_WIDTH;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.strokeStyle = WALL_STROKE;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  function snapPerimeterSegment(x, y) {
+    const pad = 55;
+    const counts = perimeterCounts();
+    let best = null;
+    let bestD = pad;
+
+    function trySeg(side, index) {
+      const { x1, y1, x2, y2 } = segmentCoords({ side, index });
+      const d = distPointSegment(x, y, x1, y1, x2, y2);
+      if (d < bestD) {
+        bestD = d;
+        best = { side, index };
+      }
+    }
+
+    for (let i = 0; i < counts.top; i++) trySeg('top', i);
+    for (let i = 0; i < counts.bottom; i++) trySeg('bottom', i);
+    for (let i = 0; i < counts.left; i++) trySeg('left', i);
+    for (let i = 0; i < counts.right; i++) trySeg('right', i);
+    return best;
+  }
+
+  function toggleEditorLineAt(x, y) {
+    const hitPad = 30;
+    for (let i = editorLines.length - 1; i >= 0; i--) {
+      const seg = editorLines[i];
+      const { x1, y1, x2, y2 } = segmentCoords(seg);
+      if (distPointSegment(x, y, x1, y1, x2, y2) < hitPad) {
+        editorLines.splice(i, 1);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function wrapPosition(x, y) {
+    const minX = PLAY.x + PLAYER_R;
+    const maxX = PLAY.x + PLAY.w - PLAYER_R;
+    const minY = PLAY.y + PLAYER_R;
+    const maxY = PLAY.y + PLAY.h - PLAYER_R;
+    let nx = x, ny = y;
+    if (!isZavod()) {
+      if (nx < minX) nx = maxX;
+      else if (nx > maxX) nx = minX;
+    }
+    if (ny < minY) ny = maxY;
+    else if (ny > maxY) ny = minY;
+    return { x: nx, y: ny };
+  }
+
+  function update(dt) {
+    if (appMode === 'editing') return;
+    if (gameState === 'exploding') {
+      updateExplosion(dt);
+      return;
+    }
+    if (won) return;
+
+    updateRaceStopwatch(dt);
+
+    motors = motorActive();
+
+    if (isBludiste() && settingsEditable) {
+      const moving = motors.up || motors.down || motors.left || motors.right;
+      if (moving || Math.hypot(player.vx, player.vy) > 1) lockSettings();
+    }
+
+    // Motor na straně kruhu tlačí opačným směrem (raketa)
+    const accel = playerAccel();
+    if (motors.up) player.vy += accel * dt;
+    if (motors.down) player.vy -= accel * dt;
+    if (motors.left) player.vx += accel * dt;
+    if (motors.right) player.vx -= accel * dt;
+
+    if (isBludiste() && frictionEnabled) {
+      const f = Math.pow(FRICTION_COEF, dt * 60);
+      player.vx *= f;
+      player.vy *= f;
+    }
+
+    const sp = Math.hypot(player.vx, player.vy);
+    if (sp > MAX_SPEED) {
+      player.vx = (player.vx / sp) * MAX_SPEED;
+      player.vy = (player.vy / sp) * MAX_SPEED;
+    }
+
+    let nx = player.x + player.vx * dt;
+    let ny = player.y + player.vy * dt;
+
+    const wrapped = wrapPosition(nx, ny);
+    nx = wrapped.x;
+    ny = wrapped.y;
+
+    if (hitRect(nx, ny, PLAYER_R) || hitBorderLines(nx, ny, PLAYER_R, borderLines)) {
+      triggerExplosion(player.x, player.y);
+      return;
+    }
+
+    player.x = nx;
+    player.y = ny;
+    updateTrail();
+
+    for (const coin of coins) {
+      if (!coin.taken) {
+        const d = Math.hypot(player.x - coin.x, player.y - coin.y);
+        if (d < PLAYER_R + COIN_R) coin.taken = true;
+      }
+    }
+
+    const collected = coins.filter(c => c.taken).length;
+    if (coins.length > 0 && collected === coins.length) {
+      won = true;
+      showWinOverlay('win');
+    }
+
+    checkRaceGoal();
+  }
+
+  function isRaceObstaclesToggleHit(x, y) {
+    const b = RACE_OBSTACLES_TOGGLE;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function drawRaceObstaclesToggle() {
+    const b = RACE_OBSTACLES_TOGGLE;
+    ctx.fillStyle = raceObstaclesEnabled ? '#4A43E8' : 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = raceObstaclesEnabled ? 'white' : 'black';
+    ctx.font = '600 15px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      raceObstaclesEnabled ? 'Překážky: zapnuto' : 'Překážky: vypnuto',
+      b.x + b.w / 2,
+      b.y + b.h / 2
+    );
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function raceAxisProgress() {
+    if (!raceGoal) return 0;
+    const startX = raceStartPosition().x;
+    const goalX = raceGoal.x;
+    const range = goalX - startX;
+    if (range <= 0) return 0;
+    return Math.max(0, Math.min(1, (player.x - startX) / range));
+  }
+
+  function drawRaceAxis() {
+    if (!raceGoal) return;
+    const a = RACE_AXIS;
+    const t = raceAxisProgress();
+    const pad = 4;
+    const innerW = a.w - pad * 2;
+    const markerX = a.x + pad + innerW * t;
+
+    ctx.fillStyle = '#e8e8e8';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(a.x, a.y, a.w, a.h);
+    ctx.strokeRect(a.x, a.y, a.w, a.h);
+
+    ctx.fillStyle = 'rgba(74, 67, 232, 0.3)';
+    ctx.fillRect(a.x + pad, a.y + pad, innerW * t, a.h - pad * 2);
+
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 2;
+    const goalMarkX = a.x + pad + innerW;
+    ctx.beginPath();
+    ctx.moveTo(goalMarkX, a.y + 2);
+    ctx.lineTo(goalMarkX, a.y + a.h - 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#4A43E8';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(markerX, a.y + a.h / 2, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'black';
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText('Start', a.x + 8, a.y + a.h / 2);
+    ctx.textAlign = 'right';
+    ctx.fillText('Cíl', a.x + a.w - 8, a.y + a.h / 2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawRaceStart() {
+    const start = raceStartPosition();
+    const sx = worldToScreenX(start.x);
+    ctx.save();
+    ctx.strokeStyle = '#4A43E8';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.moveTo(sx, PLAY.y);
+    ctx.lineTo(sx, PLAY.y + PLAY.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#4A43E8';
+    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('START', sx, PLAY.y + 36);
+    ctx.beginPath();
+    ctx.arc(sx, start.y, PLAYER_R + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(74, 67, 232, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function drawRaceGoal() {
+    if (!raceGoal) return;
+    const sx = worldToScreenX(raceGoal.x);
+    ctx.save();
+    ctx.strokeStyle = '#4A43E8';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.moveTo(sx, PLAY.y);
+    ctx.lineTo(sx, PLAY.y + PLAY.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function drawCoin(cx, cy) {
+    const g = ctx.createRadialGradient(cx - 6, cy - 8, 2, cx, cy, COIN_R);
+    g.addColorStop(0, '#FFF2B3');
+    g.addColorStop(0.35, '#FFDE00');
+    g.addColorStop(0.7, '#F6AF34');
+    g.addColorStop(1, '#CC9B5D');
+    ctx.beginPath();
+    ctx.arc(cx, cy, COIN_R, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,242,179,0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, COIN_R * 0.72, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(204,155,93,0.5)';
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(cx - 5, cy - 6, 8, 5, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawArrowUp(x, y) {
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(x, y + 38);
+    ctx.lineTo(x - 12, y + 26);
+    ctx.lineTo(x - 4, y + 26);
+    ctx.lineTo(x - 4, y + 8);
+    ctx.lineTo(x + 4, y + 8);
+    ctx.lineTo(x + 4, y + 26);
+    ctx.lineTo(x + 12, y + 26);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawArrowDown(x, y) {
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(x, y + 8);
+    ctx.lineTo(x - 12, y + 20);
+    ctx.lineTo(x - 4, y + 20);
+    ctx.lineTo(x - 4, y + 38);
+    ctx.lineTo(x + 4, y + 38);
+    ctx.lineTo(x + 4, y + 20);
+    ctx.lineTo(x + 12, y + 20);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawArrowLeft(x, y) {
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(x + 38, y);
+    ctx.lineTo(x + 26, y - 12);
+    ctx.lineTo(x + 26, y - 4);
+    ctx.lineTo(x + 8, y - 4);
+    ctx.lineTo(x + 8, y + 4);
+    ctx.lineTo(x + 26, y + 4);
+    ctx.lineTo(x + 26, y + 12);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawArrowRight(x, y) {
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y);
+    ctx.lineTo(x + 20, y - 12);
+    ctx.lineTo(x + 20, y - 4);
+    ctx.lineTo(x + 38, y - 4);
+    ctx.lineTo(x + 38, y + 4);
+    ctx.lineTo(x + 20, y + 4);
+    ctx.lineTo(x + 20, y + 12);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function isNewGameBtn(x, y) {
+    const b = NEW_GAME_BTN;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function isModeBtn(x, y, mode) {
+    const b = MODE_BTN[mode];
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function isEditorBtn(x, y) {
+    const b = EDITOR_BTN;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function isEditorRunBtn(x, y) {
+    const b = EDITOR_RUN_BTN;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function inPlayArea(x, y) {
+    return x >= PLAY.x && x <= PLAY.x + PLAY.w && y >= PLAY.y && y <= PLAY.y + PLAY.h;
+  }
+
+  function snapWallFromPoint(x, y) {
+    const c = Math.floor((x - PLAY.x - 1) / WALL_SIZE);
+    const r = Math.floor((y - PLAY.y - 1) / WALL_SIZE);
+    const wx = PLAY.x + 1 + c * WALL_SIZE;
+    const wy = PLAY.y + 1 + r * WALL_SIZE;
+    if (wx < PLAY.x || wy < PLAY.y ||
+        wx + WALL_SIZE > PLAY.x + PLAY.w || wy + WALL_SIZE > PLAY.y + PLAY.h) {
+      return null;
+    }
+    return [wx, wy];
+  }
+
+  function editorCellCenter(wx, wy) {
+    return { x: wx + WALL_SIZE / 2, y: wy + WALL_SIZE / 2 };
+  }
+
+  function editorOccupantAt(wx, wy) {
+    if (editorWalls.some(w => w[0] === wx && w[1] === wy)) return 'wall';
+    for (const coin of editorCoins) {
+      const cell = snapWallFromPoint(coin.x, coin.y);
+      if (cell && cell[0] === wx && cell[1] === wy) return 'coin';
+    }
+    if (editorPlayer) {
+      const cell = snapWallFromPoint(editorPlayer.x, editorPlayer.y);
+      if (cell && cell[0] === wx && cell[1] === wy) return 'circle';
+    }
+    return null;
+  }
+
+  function removeEditorAtCell(wx, wy) {
+    const occ = editorOccupantAt(wx, wy);
+    if (occ === 'wall') {
+      const idx = editorWalls.findIndex(w => w[0] === wx && w[1] === wy);
+      if (idx >= 0) editorWalls.splice(idx, 1);
+    } else if (occ === 'coin') {
+      const idx = editorCoins.findIndex(c => {
+        const cell = snapWallFromPoint(c.x, c.y);
+        return cell && cell[0] === wx && cell[1] === wy;
+      });
+      if (idx >= 0) editorCoins.splice(idx, 1);
+    } else if (occ === 'circle') {
+      editorPlayer = null;
+    }
+  }
+
+  function paletteToolAt(x, y) {
+    const w = PALETTE.wall;
+    if (x >= w.x - 6 && x <= w.x + w.w + 6 && y >= w.y - 6 && y <= w.y + w.h + 6) return 'wall';
+    const line = PALETTE.line;
+    if (x >= line.x - 12 && x <= line.x + line.w + 12 && y >= line.y - 18 && y <= line.y + line.h + 18) {
+      return 'line';
+    }
+    const coin = PALETTE.coin;
+    if (Math.hypot(x - coin.cx, y - coin.cy) <= coin.r + 18) return 'coin';
+    const circle = PALETTE.circle;
+    if (Math.hypot(x - circle.cx, y - circle.cy) <= circle.r + 18) return 'circle';
+    return null;
+  }
+
+  function isEditorPanelUi(x, y) {
+    return x < PLAY.x && y < EDITOR_RUN_BTN.y + EDITOR_RUN_BTN.h + 10;
+  }
+
+  function startEditor() {
+    if (!isBludiste()) return;
+    appMode = 'editing';
+    editorTool = 'wall';
+    editorWalls = [];
+    editorCoins = [];
+    editorPlayer = null;
+    editorLines = [];
+    won = false;
+    gameState = 'playing';
+    explosion = null;
+    keys.clear();
+    pointerDir = null;
+    draggingMass = false;
+    clearTrail();
+    document.getElementById('winOverlay').classList.remove('show');
+  }
+
+  function handleEditorPlace(x, y) {
+    if (editorTool === 'line') {
+      if (toggleEditorLineAt(x, y)) return;
+      const seg = snapPerimeterSegment(x, y);
+      if (!seg) return;
+      const key = lineKey(seg);
+      if (!editorLines.some(s => lineKey(s) === key)) editorLines.push(seg);
+      return;
+    }
+
+    if (!inPlayArea(x, y)) return;
+    const cell = snapWallFromPoint(x, y);
+    if (!cell) return;
+    const [wx, wy] = cell;
+    const occ = editorOccupantAt(wx, wy);
+
+    if (occ) {
+      removeEditorAtCell(wx, wy);
+      return;
+    }
+
+    const center = editorCellCenter(wx, wy);
+    if (editorTool === 'wall') {
+      editorWalls.push([wx, wy]);
+    } else if (editorTool === 'coin') {
+      editorCoins.push({ x: center.x, y: center.y });
+    } else if (editorTool === 'circle') {
+      editorPlayer = { x: center.x, y: center.y };
+    }
+  }
+
+  function drawEditorGrid() {
+    const cols = Math.floor((PLAY.w - 2) / WALL_SIZE);
+    const rows = Math.floor((PLAY.h - 2) / WALL_SIZE);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.lineWidth = 1;
+    for (let c = 0; c <= cols; c++) {
+      const x = PLAY.x + 1 + c * WALL_SIZE;
+      ctx.beginPath();
+      ctx.moveTo(x, PLAY.y);
+      ctx.lineTo(x, PLAY.y + PLAY.h);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= rows; r++) {
+      const y = PLAY.y + 1 + r * WALL_SIZE;
+      ctx.beginPath();
+      ctx.moveTo(PLAY.x, y);
+      ctx.lineTo(PLAY.x + PLAY.w, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function runEditorLevel() {
+    if (!editorPlayer) return;
+    walls = editorWalls.map(w => [...w]);
+    coins = editorCoins.map(c => ({ x: c.x, y: c.y, taken: false }));
+    borderLines = editorLines.map(s => ({ side: s.side, index: s.index }));
+    player.x = editorPlayer.x;
+    player.y = editorPlayer.y;
+    saveLevelStart();
+    appMode = 'playing';
+    resetPlayerState();
+  }
+
+  function drawFrictionToggle() {
+    const b = FRICTION_TOGGLE;
+    const locked = !settingsEditable;
+    ctx.fillStyle = locked ? '#e0e0e0' : (frictionEnabled ? '#4A43E8' : 'white');
+    ctx.strokeStyle = locked ? '#999' : 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = locked ? '#888' : (frictionEnabled ? 'white' : 'black');
+    ctx.font = '600 16px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      frictionEnabled ? 'Tření: zapnuto' : 'Tření: vypnuto',
+      b.x + b.w / 2,
+      b.y + b.h / 2
+    );
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawMassSlider() {
+    const s = MASS_SLIDER;
+    const thumbX = thumbXForMass(playerMass);
+    const thumbY = s.trackY + s.trackH / 2;
+    const locked = !settingsEditable;
+
+    ctx.fillStyle = locked ? '#888' : 'black';
+    ctx.font = '600 16px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    const labelY = s.y + 10;
+    const label = 'Hmotnost';
+    ctx.fillText(label, s.x, labelY);
+    ctx.fillText(playerMass.toFixed(1), s.x + ctx.measureText(label).width + 8, labelY);
+
+    ctx.fillStyle = locked ? '#ececec' : '#ddd';
+    ctx.strokeStyle = locked ? '#999' : 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(s.x, s.trackY, s.w, s.trackH);
+    ctx.strokeRect(s.x, s.trackY, s.w, s.trackH);
+
+    const fillW = thumbX - s.x;
+    ctx.fillStyle = locked ? '#d5d5d5' : '#b8b4f5';
+    ctx.fillRect(s.x, s.trackY, fillW, s.trackH);
+
+    ctx.fillStyle = locked ? '#aaa' : playerColor();
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(thumbX, thumbY, s.thumbR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function drawModeButton(mode, label) {
+    const b = MODE_BTN[mode];
+    const active = playMode === mode;
+    ctx.fillStyle = active ? '#4A43E8' : 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = active ? 'white' : 'black';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawModeSelector() {
+    drawModeButton('bludiste', 'Bludiště');
+    drawModeButton('zavod', 'Závod');
+  }
+
+  function drawNewGameButton() {
+    const b = NEW_GAME_BTN;
+    ctx.fillStyle = '#4A43E8';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = 'white';
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Nová hra', b.x + b.w / 2, b.y + b.h / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawControls() {
+    const pads = [
+      { dir: 'up', x: 61, y: 532, draw: () => drawArrowUp(91, 542) },
+      { dir: 'down', x: 61, y: 652, draw: () => drawArrowDown(91, 664) },
+      { dir: 'left', x: 1, y: 591, draw: () => drawArrowLeft(11, 621) },
+      { dir: 'right', x: 121, y: 591, draw: () => drawArrowRight(131, 621) }
+    ];
+    for (const pad of pads) {
+      const active = motors[pad.dir];
+      ctx.fillStyle = active ? '#e8e8ff' : 'white';
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.fillRect(pad.x, pad.y, 59, 59);
+      ctx.strokeRect(pad.x, pad.y, 59, 59);
+      pad.draw();
+    }
+  }
+
+  function playerSpeed() {
+    return Math.hypot(player.vx, player.vy);
+  }
+
+  function drawSpeed() {
+    const speed = Math.round(playerSpeed());
+    ctx.fillStyle = 'black';
+    ctx.font = '600 22px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Rychlost: ${speed}`, 12, 732);
+  }
+
+  function drawRaceTimer() {
+    const b = RACE_TIMER;
+
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+    ctx.fillStyle = 'black';
+    ctx.font = '600 15px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Časomíra', b.x + 10, b.y + 20);
+
+    if (racePhase === 'return') {
+      ctx.fillStyle = '#07553A';
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('← Zastav za startem', b.x + b.w / 2, b.y + 34);
+    }
+
+    ctx.fillStyle = raceStopwatchRunning ? '#4A43E8' : '#888';
+    ctx.font = '700 26px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      raceStopwatchRunning ? formatStopwatch(raceElapsed) : '0,00 s',
+      b.x + b.w / 2,
+      racePhase === 'return' ? b.y + 54 : b.y + 46
+    );
+    if (!raceStopwatchRunning) {
+      ctx.fillStyle = '#666';
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillText('spusť motor', b.x + b.w / 2, racePhase === 'return' ? b.y + 66 : b.y + 58);
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+  }
+
+  function drawEditorButton() {
+    const b = EDITOR_BTN;
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = 'black';
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Editor', b.x + b.w / 2, b.y + b.h / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawEditorRunButton() {
+    const b = EDITOR_RUN_BTN;
+    ctx.fillStyle = '#32F4AB';
+    ctx.strokeStyle = '#07553A';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#07553A';
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Spustit', b.x + b.w / 2, b.y + b.h / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawPaletteItem(tool, selected) {
+    if (tool === 'wall') {
+      const w = PALETTE.wall;
+      ctx.fillStyle = WALL_FILL;
+      ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.strokeStyle = WALL_STROKE;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(w.x, w.y, w.w, w.h);
+    } else if (tool === 'coin') {
+      drawCoin(PALETTE.coin.cx, PALETTE.coin.cy);
+    } else if (tool === 'line') {
+      const l = PALETTE.line;
+      const midY = l.y + l.h / 2;
+      ctx.strokeStyle = WALL_FILL;
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(l.x, midY);
+      ctx.lineTo(l.x + l.w, midY);
+      ctx.stroke();
+      ctx.strokeStyle = WALL_STROKE;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(l.x, midY);
+      ctx.lineTo(l.x + l.w, midY);
+      ctx.stroke();
+    } else if (tool === 'circle') {
+      const { cx, cy, r } = PALETTE.circle;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = PLAYER_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    if (selected) {
+      let bx, by, bw, bh;
+      if (tool === 'wall') {
+        bx = PALETTE.wall.x - 6;
+        by = PALETTE.wall.y - 6;
+        bw = PALETTE.wall.w + 12;
+        bh = PALETTE.wall.h + 12;
+      } else if (tool === 'coin') {
+        bx = PALETTE.coin.cx - PALETTE.coin.r - 10;
+        by = PALETTE.coin.cy - PALETTE.coin.r - 10;
+        bw = (PALETTE.coin.r + 10) * 2;
+        bh = bw;
+      } else {
+        bx = PALETTE.circle.cx - PALETTE.circle.r - 10;
+        by = PALETTE.circle.cy - PALETTE.circle.r - 10;
+        bw = (PALETTE.circle.r + 10) * 2;
+        bh = bw;
+      }
+      ctx.strokeStyle = '#4A43E8';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx, by, bw, bh);
+    }
+  }
+
+  function drawEditorPanel() {
+    ctx.fillStyle = 'black';
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Editor', 12, 48);
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.fillStyle = '#444';
+    ctx.fillText('Klik na prázdnou buňku = položit', 12, 68);
+    ctx.fillText('Klik na prvek = odstranit', 12, 84);
+
+    drawPaletteItem('wall', editorTool === 'wall');
+    drawPaletteItem('coin', editorTool === 'coin');
+    drawPaletteItem('line', editorTool === 'line');
+    drawPaletteItem('circle', editorTool === 'circle');
+
+    drawEditorRunButton();
+    if (!editorPlayer) {
+      ctx.fillStyle = '#a33';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Přidej fialový kruh', 95, 520);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function drawEditorPerimeterHints() {
+    if (editorTool !== 'line') return;
+    const counts = perimeterCounts();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(50, 244, 171, 0.35)';
+    ctx.lineWidth = 14;
+    ctx.lineCap = 'round';
+    const addSide = (side, n) => {
+      for (let i = 0; i < n; i++) {
+        const { x1, y1, x2, y2 } = segmentCoords({ side, index: i });
+        const key = lineKey({ side, index: i });
+        if (editorLines.some(s => lineKey(s) === key)) continue;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    };
+    addSide('top', counts.top);
+    addSide('bottom', counts.bottom);
+    addSide('left', counts.left);
+    addSide('right', counts.right);
+    ctx.restore();
+  }
+
+  function drawEditorObjects() {
+    drawEditorPerimeterHints();
+    for (const seg of editorLines) drawBorderLine(seg);
+    for (const [wx, wy] of editorWalls) {
+      ctx.fillStyle = WALL_FILL;
+      ctx.fillRect(wx, wy, WALL_SIZE, WALL_SIZE);
+      ctx.strokeStyle = WALL_STROKE;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(wx, wy, WALL_SIZE, WALL_SIZE);
+    }
+    for (const coin of editorCoins) drawCoin(coin.x, coin.y);
+    if (editorPlayer) {
+      const { x, y } = editorPlayer;
+      ctx.beginPath();
+      ctx.arc(x, y, PLAYER_R, 0, Math.PI * 2);
+      ctx.fillStyle = PLAYER_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  function flameShape(baseX, baseY, dirX, dirY, len, spread, wobble) {
+    const perpX = -dirY;
+    const perpY = dirX;
+    const tipX = baseX + dirX * len;
+    const tipY = baseY + dirY * len;
+    const midX = baseX + dirX * len * 0.55;
+    const midY = baseY + dirY * len * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(baseX + perpX * spread * 0.45, baseY + perpY * spread * 0.45);
+    ctx.quadraticCurveTo(
+      midX + perpX * (spread + wobble), midY + perpY * (spread + wobble),
+      tipX, tipY
+    );
+    ctx.quadraticCurveTo(
+      midX - perpX * (spread + wobble), midY - perpY * (spread + wobble),
+      baseX - perpX * spread * 0.45, baseY - perpY * spread * 0.45
+    );
+    ctx.closePath();
+  }
+
+  function drawFlame(baseX, baseY, dirX, dirY, seed) {
+    const t = flameTime;
+    const flicker = 0.88 + 0.12 * Math.sin(t * 0.02 + seed);
+    const len = (42 + 14 * Math.sin(t * 0.026 + seed * 1.4)) * flicker;
+    const spread = 12 + 4 * Math.sin(t * 0.033 + seed * 2.1);
+    const wobble = Math.sin(t * 0.045 + seed) * 3;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(255, 100, 0, 0.85)';
+    ctx.shadowBlur = 14;
+
+    flameShape(baseX, baseY, dirX, dirY, len, spread, wobble);
+    ctx.fillStyle = '#e63a00';
+    ctx.fill();
+
+    flameShape(baseX, baseY, dirX, dirY, len * 0.78, spread * 0.72, wobble * 0.7);
+    ctx.fillStyle = '#ff8c00';
+    ctx.fill();
+
+    flameShape(baseX, baseY, dirX, dirY, len * 0.5, spread * 0.42, wobble * 0.4);
+    ctx.fillStyle = '#ffd54a';
+    ctx.fill();
+
+    flameShape(baseX, baseY, dirX, dirY, len * 0.28, spread * 0.22, 0);
+    ctx.fillStyle = '#fffde7';
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    for (let s = 0; s < 5; s++) {
+      const phase = t * 0.055 + seed + s * 1.7;
+      const dist = len * (0.25 + 0.65 * ((Math.sin(phase) + 1) * 0.5));
+      const side = Math.sin(phase * 2.3) * spread * 0.75;
+      const perpX = -dirY;
+      const perpY = dirX;
+      const px = baseX + dirX * dist + perpX * side;
+      const py = baseY + dirY * dist + perpY * side;
+      ctx.beginPath();
+      ctx.arc(px, py, 2 + Math.sin(phase * 2) * 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = s % 2 === 0 ? '#ffeb3b' : '#ff6f00';
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawMotorNozzle(x, y, dirX, dirY, active) {
+    const perpX = -dirY;
+    const perpY = dirX;
+    const nx = x + dirX * PLAYER_R;
+    const ny = y + dirY * PLAYER_R;
+    ctx.fillStyle = playerColorDark(active);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(nx + dirX * 4, ny + dirY * 4);
+    ctx.lineTo(nx + perpX * 5, ny + perpY * 5);
+    ctx.lineTo(nx - dirX * 2, ny - dirY * 2);
+    ctx.lineTo(nx - perpX * 5, ny - perpY * 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function drawExplosion() {
+    if (!explosion) return;
+    const { x, y, particles, time } = explosion;
+    const sx = worldToScreenX(x);
+    const flash = Math.max(0, 1 - time / 0.12);
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255, 240, 180, ${flash * 0.75})`;
+      ctx.beginPath();
+      ctx.arc(sx, y, PLAYER_R + 20 + flash * 40, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const p of particles) {
+      if (p.life <= 0) continue;
+      ctx.globalAlpha = Math.max(0, p.life);
+      if (p.ring) {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(sx, y, p.size, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(worldToScreenX(p.x), p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlayer() {
+    if (gameState !== 'playing') return;
+    const x = isZavod() ? raceScreenX() : player.x;
+    const y = player.y;
+    const motorDefs = [
+      { key: 'up',    dirX: 0, dirY: -1 },
+      { key: 'down',  dirX: 0, dirY: 1 },
+      { key: 'left',  dirX: -1, dirY: 0 },
+      { key: 'right', dirX: 1, dirY: 0 }
+    ];
+
+    ctx.beginPath();
+    ctx.arc(x, y, PLAYER_R, 0, Math.PI * 2);
+    ctx.fillStyle = playerColor();
+    ctx.fill();
+
+    for (const m of motorDefs) {
+      drawMotorNozzle(x, y, m.dirX, m.dirY, motors[m.key]);
+      if (motors[m.key]) {
+        const nx = x + m.dirX * (PLAYER_R - 4);
+        const ny = y + m.dirY * (PLAYER_R - 4);
+        const perpX = -m.dirY;
+        const perpY = m.dirX;
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(nx - perpX * 3, ny - perpY * 3);
+        ctx.lineTo(nx + perpX * 3, ny + perpY * 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(nx + m.dirX * 4 - perpX * 2, ny + m.dirY * 4 - perpY * 2);
+        ctx.lineTo(nx + m.dirX * 4 + perpX * 2, ny + m.dirY * 4 + perpY * 2);
+        ctx.stroke();
+      }
+    }
+
+    let seed = 0;
+    for (const m of motorDefs) {
+      if (motors[m.key]) {
+        const nx = x + m.dirX * (PLAYER_R + 3);
+        const ny = y + m.dirY * (PLAYER_R + 3);
+        drawFlame(nx, ny, m.dirX, m.dirY, seed);
+        seed += 2.1;
+      }
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = 'white';
+    ctx.fillRect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+
+    if (appMode === 'editing') {
+      drawEditorGrid();
+      drawEditorObjects();
+      drawEditorPanel();
+      return;
+    }
+
+    if (isZavod()) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+      ctx.clip();
+    }
+
+    for (const [wx, wy] of walls) {
+      const sx = worldToScreenX(wx);
+      ctx.fillStyle = WALL_FILL;
+      ctx.fillRect(sx, wy, WALL_SIZE, WALL_SIZE);
+      ctx.strokeStyle = WALL_STROKE;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx, wy, WALL_SIZE, WALL_SIZE);
+    }
+
+    for (const seg of borderLines) drawBorderLine(seg);
+
+    for (const coin of coins) {
+      if (!coin.taken) drawCoin(worldToScreenX(coin.x), coin.y);
+    }
+
+    if (isZavod()) {
+      drawRaceStart();
+      drawRaceGoal();
+    }
+
+    drawTrail();
+    drawPlayer();
+    drawExplosion();
+
+    if (isZavod()) ctx.restore();
+    if (isZavod()) drawRaceAxis();
+    drawModeSelector();
+    if (isZavod()) {
+      drawRaceTimer();
+      drawRaceObstaclesToggle();
+    }
+    if (isBludiste()) drawScenarioSelector();
+    if (isBludiste()) {
+      drawFrictionToggle();
+      drawMassSlider();
+    }
+    drawNewGameButton();
+    drawControls();
+    if (gameState === 'playing') {
+      drawSpeed();
+      if (isBludiste()) drawEditorButton();
+    }
+  }
+
+  function loop(t) {
+    const dt = Math.min((t - lastTime) / 1000, 0.05) || 0;
+    lastTime = t;
+    flameTime = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function canvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
+    };
+  }
+
+  function dirAt(x, y) {
+    for (const [dir, cfg] of Object.entries(CONTROLS)) {
+      for (const [rx, ry, rw, rh] of cfg.rects) {
+        if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) return dir;
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener('keydown', e => {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      keys.add(e.key);
+    }
+  });
+  window.addEventListener('keyup', e => keys.delete(e.key));
+
+  function handlePointerDown(p) {
+    if (appMode === 'editing') {
+      if (isEditorRunBtn(p.x, p.y)) {
+        runEditorLevel();
+        return;
+      }
+      const tool = paletteToolAt(p.x, p.y);
+      if (tool) {
+        editorTool = tool;
+        return;
+      }
+      if (!isEditorPanelUi(p.x, p.y)) handleEditorPlace(p.x, p.y);
+      return;
+    }
+    if (isModeBtn(p.x, p.y, 'bludiste')) {
+      setPlayMode('bludiste');
+      return;
+    }
+    if (isModeBtn(p.x, p.y, 'zavod')) {
+      setPlayMode('zavod');
+      return;
+    }
+    if (isBludiste() && isScenarioBtn(p.x, p.y, 1)) {
+      setBludisteScenario(1);
+      return;
+    }
+    if (isBludiste() && isScenarioBtn(p.x, p.y, 2)) {
+      setBludisteScenario(2);
+      return;
+    }
+    if (isZavod() && isRaceObstaclesToggleHit(p.x, p.y)) {
+      raceObstaclesEnabled = !raceObstaclesEnabled;
+      applyZavodWalls();
+      return;
+    }
+    if (isBludiste() && isEditorBtn(p.x, p.y)) {
+      startEditor();
+      return;
+    }
+    if (isBludiste() && settingsEditable && isFrictionToggleHit(p.x, p.y)) {
+      frictionEnabled = !frictionEnabled;
+      return;
+    }
+    if (isBludiste() && settingsEditable && isMassSliderHit(p.x, p.y)) {
+      draggingMass = true;
+      setMassFromX(p.x);
+      return;
+    }
+    if (isNewGameBtn(p.x, p.y)) {
+      newGame();
+      return;
+    }
+    pointerDir = dirAt(p.x, p.y);
+  }
+
+  function handlePointerMove(p) {
+    if (appMode === 'editing') return;
+    if (isBludiste() && draggingMass && settingsEditable) {
+      setMassFromX(p.x);
+      return;
+    }
+    pointerDir = dirAt(p.x, p.y);
+  }
+
+  function handlePointerUp() {
+    draggingMass = false;
+    pointerDir = null;
+  }
+
+  canvas.addEventListener('mousedown', e => handlePointerDown(canvasPos(e)));
+  window.addEventListener('mouseup', handlePointerUp);
+  canvas.addEventListener('mouseleave', () => {
+    if (!draggingMass) pointerDir = null;
+  });
+  window.addEventListener('mousemove', e => {
+    if (isBludiste() && draggingMass && settingsEditable) setMassFromX(canvasPos(e).x);
+  });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    handlePointerDown(canvasPos(e));
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    handlePointerMove(canvasPos(e));
+  }, { passive: false });
+  canvas.addEventListener('touchend', handlePointerUp);
+
+  document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+  setupBludisteLevel();
+  player.vx = 0;
+  player.vy = 0;
+  resetGame();
+  requestAnimationFrame(loop);
+})();
+  </script>
+</body>
+</html>
