@@ -72,6 +72,8 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.12);
       box-sizing: border-box;
       pointer-events: auto;
+      height: auto;
+      overflow: visible;
     }
     .race-side-panel.show { display: block; }
     .race-side-panel .race-record-msg {
@@ -273,7 +275,7 @@
   const RACE_TIMER = { x: 6, y: 55, w: 178, h: 72 };
   const RACE_OBSTACLES_TOGGLE = { x: 6, y: 150, w: 178, h: 34 };
   const RACE_RECORD_PANEL = { x: 6, y: 192, w: 178, h: 52 };
-  const RACE_NEW_RECORD_FORM = { x: 6, y: 800, w: 178, h: 130 };
+  const RACE_NEW_RECORD_FORM = { x: 6, y: 254, w: 178, h: 200 };
   const RACE_AXIS = { x: PLAY.x, y: PLAY.y + PLAY.h + 6, w: PLAY.w, h: 24 };
 
   const RACE_RECORD_SEC = 40.28;
@@ -520,12 +522,34 @@
     const rect = canvas.getBoundingClientRect();
     const sx = rect.width / W;
     const sy = rect.height / H;
-    el.style.left = `${rect.left + box.x * sx}px`;
-    el.style.top = `${rect.top + box.y * sy}px`;
-    el.style.width = `${box.w * sx}px`;
+    const left = rect.left + box.x * sx;
+    let top = rect.top + box.y * sy;
+    const width = box.w * sx;
+    const minH = box.h * sy;
+    const margin = 8;
+    el.style.left = `${left}px`;
+    el.style.width = `${width}px`;
+    el.style.minHeight = `${minH}px`;
+    el.style.height = 'auto';
+    el.style.maxHeight = '';
+    el.style.overflowY = 'visible';
     el.style.fontSize = `${Math.max(11, 13 * sy)}px`;
     const input = el.querySelector('input');
     if (input) input.style.fontSize = `${Math.max(12, 14 * sy)}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = 'hidden';
+    const panelH = el.offsetHeight;
+    const maxTop = window.innerHeight - panelH - margin;
+    if (top > maxTop) top = Math.max(rect.top + margin, maxTop);
+    const minTop = rect.top + margin;
+    if (top < minTop) top = minTop;
+    el.style.top = `${top}px`;
+    el.style.visibility = '';
+    const spaceBelow = window.innerHeight - top - margin;
+    if (panelH > spaceBelow) {
+      el.style.maxHeight = `${spaceBelow}px`;
+      el.style.overflowY = 'auto';
+    }
   }
 
   function hideRaceNewRecordForm() {
@@ -543,8 +567,8 @@
   function showRaceNewRecordForm() {
     pendingNewRecord = true;
     const panel = document.getElementById('raceNewRecordPanel');
-    layoutRaceSidePanel(panel, RACE_NEW_RECORD_FORM);
     panel.classList.add('show');
+    layoutRaceSidePanel(panel, RACE_NEW_RECORD_FORM);
     document.getElementById('raceNickname').focus();
   }
 
