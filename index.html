@@ -25,8 +25,8 @@
     }
     canvas {
       display: block;
-      width: min(100vw, calc(100dvh * 1702 / 949));
-      height: min(100dvh, calc(100vw * 949 / 1702));
+      width: min(100vw, calc(100dvh * 1718 / 949));
+      height: min(100dvh, calc(100vw * 949 / 1718));
       max-width: 100vw;
       max-height: 100dvh;
       cursor: default;
@@ -65,7 +65,7 @@
 </head>
 <body>
   <div id="wrap">
-    <canvas id="game" width="1702" height="949"></canvas>
+    <canvas id="game" width="1718" height="949"></canvas>
   </div>
   <div class="win-overlay" id="winOverlay">
     <div class="win-box">
@@ -76,11 +76,11 @@
   </div>
   <script>
 (function () {
-  const W = 1702, H = 949;
+  const W = 1718, H = 949;
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
-  const PLAY = { x: 246, y: 32, w: 1456, h: 884 };
+  const PLAY = { x: 246, y: 32, w: 1472, h: 884 };
   const PLAYER_R = 29.5;
   const PLAYER_COLOR = '#4A43E8';
   const WALL_FILL = '#32F4AB';
@@ -103,18 +103,62 @@
   ];
 
   const SCENARIO_2_WALLS = [
-    [1423, 33], [1521, 33], [1717, 33],
-    [443, 131], [541, 131], [639, 131], [1227, 131], [1325, 131], [1521, 131],
-    [443, 229], [639, 229], [1227, 229],
-    [443, 327], [639, 327], [1227, 327], [1619, 327],
-    [443, 425], [639, 425], [1227, 425], [1619, 425],
-    [443, 523], [639, 523], [1227, 523], [1619, 523],
-    [443, 621], [639, 621], [1227, 621], [1619, 621],
-    [443, 719], [639, 719], [1227, 719], [1619, 719],
-    [933, 817], [1031, 817], [1129, 817], [1227, 817]
+    [345,229],[345,327],[345,425],[345,523],[345,621],[345,719],[345,817],
+    [443,229],
+    [541,229],[541,327],[541,425],[541,523],[541,621],[541,719],[541,817],
+    [835,33],[835,131],[835,229],[835,327],[835,425],[835,523],[835,621],
+    [933,33],[933,621],
+    [1031,33],[1031,327],[1031,621],
+    [1129,33],[1129,327],[1129,621],
+    [1227,33],[1227,327],[1227,621],
+    [1325,33],[1325,327],[1325,621],
+    [1423,33],[1423,327],[1423,621],
+    [1521,33],[1521,327],
+    [1619,327]
   ];
-  const SCENARIO_2_COINS = [[1472, 180]];
+  const SCENARIO_2_COINS = [[1668, 82]];
   const SCENARIO_2_PLAYER = { x: 296, y: 866 };
+
+  function buildFullPerimeterLines() {
+    const lines = [];
+    const top = Math.floor(PLAY.w / WALL_SIZE);
+    const left = Math.floor(PLAY.h / WALL_SIZE);
+    for (let i = 0; i < top; i++) {
+      lines.push({ side: 'top', index: i });
+      lines.push({ side: 'bottom', index: i });
+    }
+    for (let i = 0; i < left; i++) {
+      lines.push({ side: 'left', index: i });
+      lines.push({ side: 'right', index: i });
+    }
+    return lines;
+  }
+
+  const SCENARIO_2_LINES = buildFullPerimeterLines();
+
+  function buildRandomPerimeterLines() {
+    if (Math.random() < 0.35) return [];
+
+    const all = buildFullPerimeterLines();
+    const bySide = { top: [], bottom: [], left: [], right: [] };
+    for (const seg of all) bySide[seg.side].push(seg);
+
+    const chosen = [];
+    const sides = shuffle(['top', 'bottom', 'left', 'right']);
+    const sideCount = 1 + Math.floor(Math.random() * 2);
+
+    for (let s = 0; s < sideCount; s++) {
+      const pool = bySide[sides[s]];
+      if (!pool.length) continue;
+      const runLen = Math.min(
+        pool.length,
+        2 + Math.floor(Math.random() * Math.max(1, pool.length - 1))
+      );
+      const start = Math.floor(Math.random() * (pool.length - runLen + 1));
+      for (let i = 0; i < runLen; i++) chosen.push(pool[start + i]);
+    }
+    return chosen;
+  }
 
   const BLUDISTE_SCENARIOS = {
     1: {
@@ -125,7 +169,8 @@
     2: {
       walls: SCENARIO_2_WALLS,
       coins: SCENARIO_2_COINS,
-      player: SCENARIO_2_PLAYER
+      player: SCENARIO_2_PLAYER,
+      lines: SCENARIO_2_LINES
     }
   };
 
@@ -274,7 +319,7 @@
     const sc = BLUDISTE_SCENARIOS[bludisteScenario];
     walls = sc.walls.map(w => [...w]);
     coins = sc.coins.map(c => ({ x: c[0], y: c[1], taken: false }));
-    borderLines = [];
+    borderLines = (sc.lines || []).map(s => ({ side: s.side, index: s.index }));
     raceGoal = null;
     gameState = 'playing';
     player.x = sc.player.x;
@@ -455,9 +500,19 @@
     return arr;
   }
 
-  function wallGrid() {
+  function playGridBounds() {
     const cols = Math.floor((PLAY.w - 2) / WALL_SIZE);
     const rows = Math.floor((PLAY.h - 2) / WALL_SIZE);
+    return {
+      cols,
+      rows,
+      w: 2 + cols * WALL_SIZE,
+      h: 2 + rows * WALL_SIZE
+    };
+  }
+
+  function wallGrid() {
+    const { cols, rows } = playGridBounds();
     const cells = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -571,6 +626,7 @@
   }
 
   function generateRandomLevel() {
+    borderLines = buildRandomPerimeterLines();
     const { cells, cols, rows } = wallGrid();
     const maxWalls = Math.floor(cells.length * 0.16);
 
@@ -592,7 +648,9 @@
       if (!placement) continue;
       const { start, coinList } = placement;
       if (hitRectAt(start.x, start.y, PLAYER_R, nextWalls)) continue;
+      if (hitBorderLines(start.x, start.y, PLAYER_R, borderLines)) continue;
       if (coinList.some(c => hitRectAt(c.x, c.y, COIN_R, nextWalls))) continue;
+      if (coinList.some(c => hitBorderLines(c.x, c.y, COIN_R, borderLines))) continue;
       if (!allCoinsReachable(start.x, start.y, coinList, nextWalls)) continue;
 
       walls = nextWalls;
@@ -657,7 +715,7 @@
 
   function newGame() {
     clearTrail();
-    if (isBludiste()) setupBludisteLevel();
+    if (isBludiste()) generateRandomLevel();
     else setupZavodLevel();
     resetPlayerState();
   }
@@ -1365,11 +1423,10 @@
   }
 
   function drawEditorGrid() {
-    const cols = Math.floor((PLAY.w - 2) / WALL_SIZE);
-    const rows = Math.floor((PLAY.h - 2) / WALL_SIZE);
+    const { cols, rows, w: gridW, h: gridH } = playGridBounds();
     ctx.save();
     ctx.beginPath();
-    ctx.rect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    ctx.rect(PLAY.x, PLAY.y, gridW, gridH);
     ctx.clip();
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
     ctx.lineWidth = 1;
@@ -1377,14 +1434,14 @@
       const x = PLAY.x + 1 + c * WALL_SIZE;
       ctx.beginPath();
       ctx.moveTo(x, PLAY.y);
-      ctx.lineTo(x, PLAY.y + PLAY.h);
+      ctx.lineTo(x, PLAY.y + gridH);
       ctx.stroke();
     }
     for (let r = 0; r <= rows; r++) {
       const y = PLAY.y + 1 + r * WALL_SIZE;
       ctx.beginPath();
       ctx.moveTo(PLAY.x, y);
-      ctx.lineTo(PLAY.x + PLAY.w, y);
+      ctx.lineTo(PLAY.x + gridW, y);
       ctx.stroke();
     }
     ctx.restore();
@@ -1888,7 +1945,12 @@
     ctx.fillRect(0, 0, W, H);
 
     ctx.fillStyle = 'white';
-    ctx.fillRect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    if (appMode === 'editing') {
+      const { w: gridW, h: gridH } = playGridBounds();
+      ctx.fillRect(PLAY.x, PLAY.y, gridW, gridH);
+    } else {
+      ctx.fillRect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    }
 
     if (appMode === 'editing') {
       drawEditorGrid();
