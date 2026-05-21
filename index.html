@@ -201,6 +201,16 @@
     return lines;
   }
 
+  function buildHorizontalPerimeterLines() {
+    const lines = [];
+    const top = Math.floor(PLAY.w / WALL_SIZE);
+    for (let i = 0; i < top; i++) {
+      lines.push({ side: 'top', index: i });
+      lines.push({ side: 'bottom', index: i });
+    }
+    return lines;
+  }
+
   const SCENARIO_2_LINES = buildFullPerimeterLines();
 
   function buildRandomPerimeterLines() {
@@ -350,7 +360,7 @@
   let raceElapsed = 0;
   let raceFinishTime = 0;
   let racePhase = 'outbound';
-  let raceObstaclesEnabled = true;
+  let raceObstaclesEnabled = false;
   let raceStopwatchRunning = false;
   let raceObstacleWalls = [];
   let bludisteScenario = 1;
@@ -457,22 +467,42 @@
 
     if (maxC <= minC) return picked;
 
-    for (let attempt = 0; attempt < 600 && picked.length < ZAVOD_OBSTACLE_COUNT; attempt++) {
-      const c = minC + Math.floor(Math.random() * (maxC - minC + 1));
-      const r = Math.floor(Math.random() * rows);
+    const playerC = Math.floor((start.x - PLAY.x - 1) / WALL_SIZE);
+    const playerR = Math.floor((start.y - PLAY.y - 1) / WALL_SIZE);
+
+    function wallAt(c, r) {
+      return [PLAY.x + 1 + c * WALL_SIZE, PLAY.y + 1 + r * WALL_SIZE];
+    }
+
+    function canPlace(c, r) {
+      if (c < minC || c > maxC || r < 0 || r >= rows) return false;
       const wx = PLAY.x + 1 + c * WALL_SIZE;
-      const wy = PLAY.y + 1 + r * WALL_SIZE;
-
-      if (wx <= startWallX + WALL_SIZE || wx >= endWallX - WALL_SIZE) continue;
-
-      const tooClose = picked.some(([pw, ph]) => {
+      if (wx <= startWallX + WALL_SIZE || wx >= endWallX - WALL_SIZE) return false;
+      return !picked.some(([pw, ph]) => {
         const pc = Math.floor((pw - PLAY.x - 1) / WALL_SIZE);
         const pr = Math.floor((ph - PLAY.y - 1) / WALL_SIZE);
         return Math.abs(pc - c) + Math.abs(pr - r) < 3;
       });
-      if (tooClose) continue;
+    }
 
-      picked.push([wx, wy]);
+    function tryAdd(c, r) {
+      if (!canPlace(c, r)) return false;
+      picked.push(wallAt(c, r));
+      return true;
+    }
+
+    const nearDist = 5 + Math.floor(Math.random() * 3);
+    const nearC = playerC + nearDist;
+    if (!tryAdd(nearC, playerR)) {
+      for (const dr of [-1, 1, -2, 2, -3, 3]) {
+        if (tryAdd(nearC, playerR + dr)) break;
+      }
+    }
+
+    for (let attempt = 0; attempt < 600 && picked.length < ZAVOD_OBSTACLE_COUNT; attempt++) {
+      const c = minC + Math.floor(Math.random() * (maxC - minC + 1));
+      const r = Math.floor(Math.random() * rows);
+      tryAdd(c, r);
     }
     return picked;
   }
@@ -487,7 +517,9 @@
   }
 
   function setupZavodLevel() {
-    borderLines = [];
+    playerMass = MASS_MID;
+    borderLines = buildHorizontalPerimeterLines();
+    raceObstaclesEnabled = false;
     raceObstacleWalls = generateRandomZavodObstacles();
     applyZavodWalls();
     coins = [];
@@ -876,6 +908,7 @@
     explosion = null;
     clearTrail();
     if (isZavod()) {
+      playerMass = MASS_MID;
       resetRaceStopwatch();
       racePhase = 'outbound';
     }
@@ -986,19 +1019,23 @@
   function updateTrail() {
     if (!isBludiste() || gameState !== 'playing' || !frictionEnabled) return;
     const speed = Math.hypot(player.vx, player.vy);
-    if (speed < 12) return;
+    if (speed < 0.5) return;
 
     const intensity = frictionStrength();
     if (trail.length > 0) {
       const last = trail[trail.length - 1];
       const dist = Math.hypot(player.x - last.x, player.y - last.y);
       if (dist > 220) {
-        trail.push({ x: player.x, y: player.y, intensity, break: true });
+        trail.push({ x: player.x, y: player.y, intensity, speed, break: true });
         return;
       }
-      if (dist < 6) return;
+      if (dist < 2) return;
     }
-    trail.push({ x: player.x, y: player.y, intensity });
+    trail.push({ x: player.x, y: player.y, intensity, speed });
+  }
+
+  function trailSpeedVis(speed) {
+    return Math.min(1, Math.max(0.4, speed / 35));
   }
 
   function drawTrail() {
@@ -1015,9 +1052,10 @@
       const p1 = trail[i];
       if (p1.break) continue;
       const t = i / trail.length;
-      const alpha = Math.min(0.65, 0.14 + p1.intensity * 14 * (0.3 + t * 0.7));
+      const vis = trailSpeedVis(p1.speed || 0);
+      const alpha = Math.min(0.65, Math.max(0.16, (0.14 + p1.intensity * 14 * (0.3 + t * 0.7)) * vis));
       ctx.strokeStyle = playerTrailColorAlpha(alpha);
-      ctx.lineWidth = PLAYER_R * 1.5 * (0.35 + t * 0.65);
+      ctx.lineWidth = PLAYER_R * 1.5 * (0.35 + t * 0.65) * Math.max(0.45, vis);
       ctx.beginPath();
       ctx.moveTo(worldToScreenX(p0.x), p0.y);
       ctx.lineTo(worldToScreenX(p1.x), p1.y);
@@ -1026,7 +1064,8 @@
     for (let i = 0; i < trail.length; i++) {
       const p = trail[i];
       const t = i / trail.length;
-      const alpha = Math.min(0.5, 0.1 + p.intensity * 14 * 0.35 * (0.3 + t * 0.7));
+      const vis = trailSpeedVis(p.speed || 0);
+      const alpha = Math.min(0.5, Math.max(0.12, (0.1 + p.intensity * 14 * 0.35 * (0.3 + t * 0.7)) * vis));
       ctx.fillStyle = playerTrailColorAlpha(alpha);
       ctx.beginPath();
       ctx.arc(worldToScreenX(p.x), p.y, PLAYER_R * (0.5 + t * 0.45), 0, Math.PI * 2);
@@ -1191,9 +1230,9 @@
     if (!isZavod()) {
       if (nx < minX) nx = maxX;
       else if (nx > maxX) nx = minX;
+      if (ny < minY) ny = maxY;
+      else if (ny > maxY) ny = minY;
     }
-    if (ny < minY) ny = maxY;
-    else if (ny > maxY) ny = minY;
     return { x: nx, y: ny };
   }
 
@@ -1240,7 +1279,8 @@
     nx = wrapped.x;
     ny = wrapped.y;
 
-    if (hitRect(nx, ny, PLAYER_R) || (!isZavod() && hitBorderLines(nx, ny, PLAYER_R, borderLines))) {
+    const borderX = isZavod() ? worldToScreenX(nx) : nx;
+    if (hitRect(nx, ny, PLAYER_R) || hitBorderLines(borderX, ny, PLAYER_R, borderLines)) {
       triggerExplosion(player.x, player.y);
       return;
     }
@@ -1867,12 +1907,19 @@
   }
 
   function drawVelocityVectors() {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PLAY.x, PLAY.y, PLAY.w, PLAY.h);
+    ctx.clip();
+
     const originX = playerScreenX();
     const originY = player.y;
 
     drawVelocityComponentArrow(originX, originY, player.vx, true, '#1d4ed8');
     drawVelocityComponentArrow(originX, originY, player.vy, false, '#15803d');
     drawResultantVelocityArrow(originX, originY);
+
+    ctx.restore();
   }
 
   function drawVectorsToggle() {
@@ -2304,9 +2351,7 @@
       ctx.strokeRect(sx, wy, WALL_SIZE, WALL_SIZE);
     }
 
-    if (!isZavod()) {
-      for (const seg of borderLines) drawBorderLine(seg);
-    }
+    for (const seg of borderLines) drawBorderLine(seg);
 
     for (const coin of coins) {
       if (!coin.taken) drawCoin(worldToScreenX(coin.x), coin.y);
