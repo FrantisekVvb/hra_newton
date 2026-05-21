@@ -39,6 +39,38 @@ Poté otevři [http://localhost:8000](http://localhost:8000).
 
 Jednosouborová hra v HTML5 Canvas (bez závislostí).
 
+## Zápis rekordního času do Google Tabulky
+
+Do tabulky se zapisuje **jen nový rekord** — po odeslání přezdívky v levém panelu (sloupce `čas` | `přezdívka`).
+
+Tabulka: [rekord – Google Sheets](https://docs.google.com/spreadsheets/d/1sfEULq5fP-q2KIosgMEx9iyMDZg150kqqgUt7LxFOnw/edit?usp=sharing)
+
+### Nastavení (automaticky)
+
+V tabulce nech hlavičku: **čas** | **přezdívka**. Pak v terminálu (jednorázové přihlášení Google účtem vlastníka tabulky):
+
+```bash
+cd ~/Documents/dev2/hra_newton
+./scripts/deploy-rekord.sh
+```
+
+Skript nasadí `google-apps-script/ZapisCasu.gs`, vytvoří webovou aplikaci a zapíše URL do `RACE_SHEET_LOG_URL` v `index.html`. Potom `git push`.
+
+### Nastavení (ručně)
+
+1. Tabulka → **Rozšíření → Apps Script** → vlož `google-apps-script/ZapisCasu.gs`
+2. **Nasadit → Webová aplikace** (Já / Kdokoli)
+3. URL `/exec` do `RACE_SHEET_LOG_URL` v `index.html`
+
+### Rekord v levém panelu
+
+V `index.html` uprav `RACE_RECORD_SEC` (např. `40.28`) a `RACE_RECORD_NAME` (např. `František`). Po lepším čase se zobrazí formulář s přezdívkou; zápis do tabulky proběhne až po **Odeslat**.
+
+### Poznámky
+
+- Bez vyplněné `RACE_SHEET_LOG_URL` se nic neodesílá.
+- URL skriptu je veřejná v kódu hry — volitelně použij `LOG_TOKEN` ve vlastnostech skriptu.
+
 ## Nahrání na GitHub
 
 V terminálu:

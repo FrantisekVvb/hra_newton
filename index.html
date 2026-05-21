@@ -61,11 +61,76 @@
       cursor: pointer;
     }
     .win-box button:hover { background: #3a34c8; }
+    .race-side-panel {
+      position: fixed;
+      display: none;
+      z-index: 11;
+      padding: 8px 10px;
+      background: #fff;
+      border: 2px solid #4A43E8;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      box-sizing: border-box;
+      pointer-events: auto;
+    }
+    .race-side-panel.show { display: block; }
+    .race-side-panel .race-record-msg {
+      font-size: 13px;
+      line-height: 1.35;
+      color: #07553A;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .race-side-panel label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #333;
+    }
+    .race-side-panel input {
+      width: 100%;
+      padding: 6px 8px;
+      font-size: 14px;
+      border: 2px solid #999;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      box-sizing: border-box;
+    }
+    .race-side-panel input:focus {
+      outline: none;
+      border-color: #4A43E8;
+    }
+    .race-side-panel button {
+      width: 100%;
+      padding: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 2px solid #4A43E8;
+      background: #4A43E8;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .race-side-panel button:hover { background: #3a34c8; }
+    .race-side-panel .race-thanks {
+      font-size: 13px;
+      font-weight: 600;
+      color: #4A43E8;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
   <div id="wrap">
     <canvas id="game" width="1718" height="949"></canvas>
+  </div>
+  <div id="raceNewRecordPanel" class="race-side-panel">
+    <p class="race-record-msg">Podařilo se ti zajet závod v rekordním čase! Napiš nám svou přezdívku a my tvůj rekord zveřejníme.</p>
+    <label for="raceNickname">Přezdívka</label>
+    <input type="text" id="raceNickname" maxlength="48" placeholder="Tvoje jméno" autocomplete="nickname" />
+    <button type="button" id="raceNicknameSubmit">Odeslat</button>
+    <p class="race-thanks" id="raceNicknameThanks" hidden>Děkujeme!</p>
   </div>
   <div class="win-overlay" id="winOverlay">
     <div class="win-box">
@@ -207,7 +272,12 @@
   const RACE_FINISH_SPEED_EPS = 2;
   const RACE_TIMER = { x: 6, y: 55, w: 178, h: 72 };
   const RACE_OBSTACLES_TOGGLE = { x: 6, y: 150, w: 178, h: 34 };
+  const RACE_RECORD_PANEL = { x: 6, y: 192, w: 178, h: 52 };
+  const RACE_NEW_RECORD_FORM = { x: 6, y: 800, w: 178, h: 130 };
   const RACE_AXIS = { x: PLAY.x, y: PLAY.y + PLAY.h + 6, w: PLAY.w, h: 24 };
+
+  const RACE_RECORD_SEC = 40.28;
+  const RACE_RECORD_NAME = 'František';
 
   const MODE_BTN = {
     bludiste: { x: 6, y: 8, w: 90, h: 36 },
@@ -234,6 +304,9 @@
   const ACCEL_POWER = 3.4;
   const MAX_SPEED = 10000;
   const COIN_COUNT = 5;
+
+  // URL webové aplikace z Google Apps Script (viz README). Prázdné = zápis vypnutý.
+  const RACE_SHEET_LOG_URL = 'https://script.google.com/macros/s/AKfycbzTp7flNN5_njdoUO6gNE33npzFEAjA6QSzeVpT2ULzl8FcruEH8NZxguk5w2DvrybIPg/exec';
 
   let walls = DEFAULT_WALLS.map(w => [...w]);
   const COIN_R = 24;
@@ -279,6 +352,7 @@
   let raceStopwatchRunning = false;
   let raceObstacleWalls = [];
   let bludisteScenario = 1;
+  let pendingNewRecord = false;
 
   function saveLevelStart() {
     levelStart = {
@@ -438,6 +512,77 @@
     return `${whole},${cc} s`;
   }
 
+  function isNewRaceRecord() {
+    return raceFinishTime > 0 && raceFinishTime < RACE_RECORD_SEC;
+  }
+
+  function layoutRaceSidePanel(el, box) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = rect.width / W;
+    const sy = rect.height / H;
+    el.style.left = `${rect.left + box.x * sx}px`;
+    el.style.top = `${rect.top + box.y * sy}px`;
+    el.style.width = `${box.w * sx}px`;
+    el.style.fontSize = `${Math.max(11, 13 * sy)}px`;
+    const input = el.querySelector('input');
+    if (input) input.style.fontSize = `${Math.max(12, 14 * sy)}px`;
+  }
+
+  function hideRaceNewRecordForm() {
+    pendingNewRecord = false;
+    const panel = document.getElementById('raceNewRecordPanel');
+    panel.classList.remove('show');
+    document.getElementById('raceNickname').value = '';
+    document.getElementById('raceNicknameThanks').hidden = true;
+    document.getElementById('raceNickname').hidden = false;
+    document.querySelector('#raceNewRecordPanel label').hidden = false;
+    document.getElementById('raceNicknameSubmit').hidden = false;
+    document.querySelector('#raceNewRecordPanel .race-record-msg').hidden = false;
+  }
+
+  function showRaceNewRecordForm() {
+    pendingNewRecord = true;
+    const panel = document.getElementById('raceNewRecordPanel');
+    layoutRaceSidePanel(panel, RACE_NEW_RECORD_FORM);
+    panel.classList.add('show');
+    document.getElementById('raceNickname').focus();
+  }
+
+  function submitRaceNickname() {
+    const nick = document.getElementById('raceNickname').value.trim();
+    if (!nick) {
+      document.getElementById('raceNickname').focus();
+      return;
+    }
+    logRaceTimeToSheet(nick);
+    pendingNewRecord = false;
+    document.getElementById('raceNicknameThanks').hidden = false;
+    document.getElementById('raceNickname').hidden = true;
+    document.querySelector('#raceNewRecordPanel label').hidden = true;
+    document.getElementById('raceNicknameSubmit').hidden = true;
+    document.querySelector('#raceNewRecordPanel .race-record-msg').hidden = true;
+    setTimeout(hideRaceNewRecordForm, 2200);
+  }
+
+  function logRaceTimeToSheet(prezdivka) {
+    const base = RACE_SHEET_LOG_URL.trim();
+    if (!base || !prezdivka) return;
+
+    const params = new URLSearchParams({
+      cas: formatStopwatch(raceFinishTime),
+      prezdivka
+    });
+    const url = `${base}${base.includes('?') ? '&' : '?'}${params}`;
+
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url);
+        return;
+      }
+      fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+    } catch (_) {}
+  }
+
   function showWinOverlay(kind) {
     const title = document.getElementById('winTitle');
     const msg = document.getElementById('winMessage');
@@ -479,6 +624,7 @@
         player.vx = 0;
         player.vy = 0;
         raceFinishTime = raceElapsed;
+        if (isNewRaceRecord()) showRaceNewRecordForm();
         showWinOverlay();
       }
     }
@@ -490,6 +636,7 @@
     if (appMode === 'editing') appMode = 'playing';
     frictionEnabled = false;
     clearTrail();
+    hideRaceNewRecordForm();
     if (mode === 'zavod') setupZavodLevel();
     else setupBludisteLevel();
     resetPlayerState();
@@ -710,6 +857,7 @@
       racePhase = 'outbound';
     }
     document.getElementById('winOverlay').classList.remove('show');
+    hideRaceNewRecordForm();
   }
 
   function resetGame() {
@@ -1097,6 +1245,17 @@
   function isRaceObstaclesToggleHit(x, y) {
     const b = RACE_OBSTACLES_TOGGLE;
     return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  function drawRaceRecord() {
+    const b = RACE_RECORD_PANEL;
+    ctx.fillStyle = 'black';
+    ctx.font = '600 15px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Rekord: ${formatStopwatch(RACE_RECORD_SEC)}`, b.x + 6, b.y + 20);
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.fillStyle = '#444';
+    ctx.fillText(`(${RACE_RECORD_NAME})`, b.x + 6, b.y + 40);
   }
 
   function drawRaceObstaclesToggle() {
@@ -2146,6 +2305,15 @@
     if (isZavod()) {
       drawRaceTimer();
       drawRaceObstaclesToggle();
+      drawRaceRecord();
+      if (pendingNewRecord) {
+        const f = RACE_NEW_RECORD_FORM;
+        ctx.fillStyle = 'rgba(74, 67, 232, 0.08)';
+        ctx.strokeStyle = '#4A43E8';
+        ctx.lineWidth = 2;
+        ctx.fillRect(f.x, f.y, f.w, f.h);
+        ctx.strokeRect(f.x, f.y, f.w, f.h);
+      }
     }
     if (isBludiste()) drawScenarioSelector();
     if (isBludiste()) {
@@ -2292,6 +2460,14 @@
   canvas.addEventListener('touchend', handlePointerUp);
 
   document.getElementById('restartBtn').addEventListener('click', resetGame);
+  document.getElementById('raceNicknameSubmit').addEventListener('click', submitRaceNickname);
+  document.getElementById('raceNickname').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitRaceNickname();
+  });
+  window.addEventListener('resize', () => {
+    const panel = document.getElementById('raceNewRecordPanel');
+    if (panel.classList.contains('show')) layoutRaceSidePanel(panel, RACE_NEW_RECORD_FORM);
+  });
 
   setupBludisteLevel();
   player.vx = 0;
