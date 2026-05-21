@@ -213,9 +213,10 @@
     bludiste: { x: 6, y: 8, w: 90, h: 36 },
     zavod:    { x: 98, y: 8, w: 86, h: 36 }
   };
-  const FRICTION_TOGGLE = { x: 6, y: 348, w: 178, h: 34 };
+  const FRICTION_TOGGLE = { x: 6, y: 348, w: 88, h: 34 };
+  const EDITOR_BTN = { x: 98, y: 348, w: 86, h: 34 };
+  const VECTORS_TOGGLE = { x: 6, y: 748, w: 178, h: 34 };
   const NEW_GAME_BTN = { x: 6, y: 458, w: 178, h: 46 };
-  const EDITOR_BTN = { x: 6, y: 758, w: 178, h: 42 };
   const EDITOR_RUN_BTN = { x: 6, y: 458, w: 178, h: 46 };
   const MASS_SLIDER = { x: 8, y: 398, w: 174, trackY: 424, trackH: 10, thumbR: 11 };
   const PALETTE = {
@@ -247,6 +248,7 @@
   let playerMass = MASS_MID;
   let draggingMass = false;
   let frictionEnabled = false;
+  let velocityVectorsVisible = true;
   let settingsEditable = true;
   let trail = [];
 
@@ -409,6 +411,7 @@
   }
 
   function setupZavodLevel() {
+    borderLines = [];
     raceObstacleWalls = generateRandomZavodObstacles();
     applyZavodWalls();
     coins = [];
@@ -880,6 +883,11 @@
     return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
   }
 
+  function isVectorsToggleHit(x, y) {
+    const b = VECTORS_TOGGLE;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
   function isMassSliderHit(x, y) {
     const s = MASS_SLIDER;
     const ty = s.trackY + s.trackH / 2;
@@ -1061,7 +1069,7 @@
     nx = wrapped.x;
     ny = wrapped.y;
 
-    if (hitRect(nx, ny, PLAYER_R) || hitBorderLines(nx, ny, PLAYER_R, borderLines)) {
+    if (hitRect(nx, ny, PLAYER_R) || (!isZavod() && hitBorderLines(nx, ny, PLAYER_R, borderLines))) {
       triggerExplosion(player.x, player.y);
       return;
     }
@@ -1135,6 +1143,16 @@
 
     ctx.fillStyle = 'rgba(74, 67, 232, 0.3)';
     ctx.fillRect(a.x + pad, a.y + pad, innerW * t, a.h - pad * 2);
+
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 10; i++) {
+      const tickX = a.x + pad + innerW * (i / 10);
+      ctx.beginPath();
+      ctx.moveTo(tickX, a.y + 3);
+      ctx.lineTo(tickX, a.y + a.h - 3);
+      ctx.stroke();
+    }
 
     ctx.strokeStyle = '#FFD700';
     ctx.lineWidth = 2;
@@ -1462,6 +1480,10 @@
   function drawFrictionToggle() {
     const b = FRICTION_TOGGLE;
     const locked = !settingsEditable;
+    ctx.fillStyle = locked ? '#888' : 'black';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Tření', b.x, b.y - 5);
     ctx.fillStyle = locked ? '#e0e0e0' : (frictionEnabled ? '#4A43E8' : 'white');
     ctx.strokeStyle = locked ? '#999' : 'black';
     ctx.lineWidth = 2;
@@ -1472,7 +1494,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(
-      frictionEnabled ? 'Tření: zapnuto' : 'Tření: vypnuto',
+      frictionEnabled ? 'Zapnuto' : 'Vypnuto',
       b.x + b.w / 2,
       b.y + b.h / 2
     );
@@ -1570,6 +1592,131 @@
     return Math.hypot(player.vx, player.vy);
   }
 
+  const VEL_ARROW_SCALE = 448 / 600;
+
+  function velocityArrowLength(component) {
+    if (Math.abs(component) < 0.5) return 0;
+    return Math.abs(component) * VEL_ARROW_SCALE;
+  }
+
+  function drawVelocityArrowHead(tipX, tipY, angle, color) {
+    const size = 10;
+    const drawHead = (fill, stroke, lineW) => {
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineW;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(
+        tipX - size * Math.cos(angle - 0.42),
+        tipY - size * Math.sin(angle - 0.42)
+      );
+      ctx.lineTo(
+        tipX - size * Math.cos(angle + 0.42),
+        tipY - size * Math.sin(angle + 0.42)
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    };
+    drawHead('white', 'white', 4);
+    drawHead(color, 'black', 1.5);
+  }
+
+  function drawVelocityArrowLabel(tipX, tipY, angle, magnitude, color) {
+    const offset = 16;
+    const lx = tipX + Math.cos(angle) * offset;
+    const ly = tipY + Math.sin(angle) * offset;
+    const text = String(Math.round(magnitude));
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'white';
+    ctx.fillStyle = 'white';
+    ctx.strokeText(text, lx, ly);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.strokeText(text, lx, ly);
+    ctx.fillStyle = color;
+    ctx.fillText(text, lx, ly);
+  }
+
+  function drawVelocityArrowLine(originX, originY, tipX, tipY, color, magnitude) {
+    const angle = Math.atan2(tipY - originY, tipX - originX);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(originX, originY);
+    ctx.lineTo(tipX, tipY);
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    drawVelocityArrowHead(tipX, tipY, angle, color);
+    drawVelocityArrowLabel(tipX, tipY, angle, magnitude, color);
+  }
+
+  function drawVelocityComponentArrow(originX, originY, value, horizontal, color) {
+    const len = velocityArrowLength(value);
+    if (len < 1) return;
+    const sign = Math.sign(value);
+    const tipX = horizontal ? originX + sign * len : originX;
+    const tipY = horizontal ? originY : originY + sign * len;
+    drawVelocityArrowLine(originX, originY, tipX, tipY, color, Math.abs(value));
+  }
+
+  function drawResultantVelocityArrow(originX, originY) {
+    const lenX = velocityArrowLength(player.vx);
+    const lenY = velocityArrowLength(player.vy);
+    if (lenX < 1 && lenY < 1) return;
+
+    const tipX = originX + (player.vx === 0 ? 0 : Math.sign(player.vx) * lenX);
+    const tipY = originY + (player.vy === 0 ? 0 : Math.sign(player.vy) * lenY);
+    drawVelocityArrowLine(originX, originY, tipX, tipY, '#d62828', playerSpeed());
+  }
+
+  function playerScreenX() {
+    return isZavod() ? raceScreenX() : player.x;
+  }
+
+  function drawVelocityVectors() {
+    const originX = playerScreenX();
+    const originY = player.y;
+
+    drawVelocityComponentArrow(originX, originY, player.vx, true, '#1d4ed8');
+    drawVelocityComponentArrow(originX, originY, player.vy, false, '#15803d');
+    drawResultantVelocityArrow(originX, originY);
+  }
+
+  function drawVectorsToggle() {
+    const b = VECTORS_TOGGLE;
+    ctx.fillStyle = '#666';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Vektory', b.x, b.y - 5);
+    ctx.fillStyle = velocityVectorsVisible ? '#4A43E8' : 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = velocityVectorsVisible ? 'white' : 'black';
+    ctx.font = '600 16px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      velocityVectorsVisible ? 'Zapnuto' : 'Vypnuto',
+      b.x + b.w / 2,
+      b.y + b.h / 2
+    );
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+  }
+
   function drawSpeed() {
     const speed = Math.round(playerSpeed());
     ctx.fillStyle = 'black';
@@ -1625,7 +1772,7 @@
     ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.strokeRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = 'black';
-    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.font = '600 16px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Editor', b.x + b.w / 2, b.y + b.h / 2);
@@ -1975,7 +2122,9 @@
       ctx.strokeRect(sx, wy, WALL_SIZE, WALL_SIZE);
     }
 
-    for (const seg of borderLines) drawBorderLine(seg);
+    if (!isZavod()) {
+      for (const seg of borderLines) drawBorderLine(seg);
+    }
 
     for (const coin of coins) {
       if (!coin.taken) drawCoin(worldToScreenX(coin.x), coin.y);
@@ -1991,6 +2140,7 @@
     drawExplosion();
 
     if (isZavod()) ctx.restore();
+    if (velocityVectorsVisible && gameState === 'playing') drawVelocityVectors();
     if (isZavod()) drawRaceAxis();
     drawModeSelector();
     if (isZavod()) {
@@ -2000,13 +2150,14 @@
     if (isBludiste()) drawScenarioSelector();
     if (isBludiste()) {
       drawFrictionToggle();
+      if (gameState === 'playing') drawEditorButton();
       drawMassSlider();
     }
     drawNewGameButton();
     drawControls();
     if (gameState === 'playing') {
       drawSpeed();
-      if (isBludiste()) drawEditorButton();
+      drawVectorsToggle();
     }
   }
 
@@ -2094,6 +2245,10 @@
     if (isBludiste() && settingsEditable && isMassSliderHit(p.x, p.y)) {
       draggingMass = true;
       setMassFromX(p.x);
+      return;
+    }
+    if (gameState === 'playing' && isVectorsToggleHit(p.x, p.y)) {
+      velocityVectorsVisible = !velocityVectorsVisible;
       return;
     }
     if (isNewGameBtn(p.x, p.y)) {
