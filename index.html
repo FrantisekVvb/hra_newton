@@ -1846,19 +1846,19 @@
   }
 
   function drawVelocityArrowLabel(tipX, tipY, angle, magnitude, color) {
-    const offset = 16;
+    const offset = 22;
     const lx = tipX + Math.cos(angle) * offset;
     const ly = tipY + Math.sin(angle) * offset;
     const text = String(Math.round(magnitude));
-    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.font = '600 20px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.strokeStyle = 'white';
     ctx.fillStyle = 'white';
     ctx.strokeText(text, lx, ly);
     ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.strokeText(text, lx, ly);
     ctx.fillStyle = color;
     ctx.fillText(text, lx, ly);
